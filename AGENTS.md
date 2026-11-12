@@ -14,7 +14,7 @@ hadir dan hangat, bukan mengawasi.
 | Server | `server/` | Go + PostgreSQL: API pengguna, API admin, API aplikasi Mac, worker generate |
 | Web | `web/` | Vue 3 + Vite: sisi pengguna dan ruang admin (satu SPA, dua sesi terpisah) |
 
-Rancangan visual web: `docs/DESIGN.md`. Deploy: `DEPLOY.md`.
+Rancangan visual web: `docs/DESIGN.md`. Deploy: `DEPLOY.md` (manusia) dan `AGENT_SETUP_VM.md` (runbook agent di VM).
 
 ## Cek sebelum commit
 

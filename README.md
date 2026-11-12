@@ -76,7 +76,7 @@ Syarat: macOS 13 (Ventura) ke atas, Apple Silicon atau Intel.
 
 ## Menjalankan server & web
 
-Dengan Docker (lihat [DEPLOY.md](DEPLOY.md) untuk VPS):
+Dengan Docker (lihat [DEPLOY.md](DEPLOY.md) untuk VPS, atau [AGENT_SETUP_VM.md](AGENT_SETUP_VM.md) kalau dipasang oleh AI agent):
 
 ```bash
 cp .env.example .env

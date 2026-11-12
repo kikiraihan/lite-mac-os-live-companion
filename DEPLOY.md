@@ -3,8 +3,12 @@
 Server + web berjalan sebagai satu container (`temu-app`) dan satu PostgreSQL (`temu-db`). Hanya
 `127.0.0.1:8093` yang dibuka di host; nginx host + Cloudflare yang menghadap internet.
 
-Kalau VPS-nya sama dengan project lain (katilidev 8082, undangankami 8083, our-life-planner 8090, Racik 8091,
-Pancar 8092): Temu memakai **8093**, folder `/var/www/temu`, project compose `temu` — tidak menyentuh yang lain.
+Kalau VPS-nya sama dengan project lain (katilidev 8082, our-life-planner 8090, AI Todo 8095, dan mungkin Racik 8091 /
+Pancar 8092 / undangankami 8083): Temu memakai **8093**, folder `/var/www/temu`, project compose `temu` — tidak
+menyentuh yang lain.
+
+> **Memasang lewat AI agent di VM?** Berikan [`AGENT_SETUP_VM.md`](AGENT_SETUP_VM.md): runbook langkah demi langkah
+> dengan aturan keras (tidak menyentuh project lain), pre-flight port, setup CI/CD, dan format laporan.
 
 ```
 push ke main
