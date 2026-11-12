@@ -1,0 +1,11 @@
+.git
+.github
+build
+dist
+docs
+Sources
+Resources
+backups
+web/node_modules
+web/dist
+.env
