@@ -71,6 +71,14 @@ onBeforeUnmount(() => clearInterval(timer))
       </figure>
     </section>
 
+    <section class="band">
+      <h2>Lihat Temu bergerak</h2>
+      <p class="measure muted">32 detik: dari pet yang ketiduran di layar Mac sampai sapaan yang diantar teman.</p>
+      <video class="px film" controls playsinline preload="none" poster="/videos/temu-teaser.jpg" src="/videos/temu-teaser.mp4">
+        <a href="/videos/temu-teaser.mp4">Unduh video teaser</a>
+      </video>
+    </section>
+
     <section class="band duo">
       <div>
         <h2>Hadir di desktop dia</h2>
@@ -155,6 +163,8 @@ figcaption { padding: 10px 12px; border-top: 3px solid var(--tinta); }
 
 .band { max-width: 1120px; margin: 0 auto; padding: 40px 20px; }
 .band h2 { margin-bottom: 20px; }
+.band > .muted { margin-top: -10px; }
+.film { width: calc(100% - 2 * var(--px)); height: auto; aspect-ratio: 16 / 9; margin-top: 20px; background: var(--langit); }
 .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px; }
 .ways h3 { margin: 10px 0 6px; }
 .duo { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 4fr); gap: 48px; align-items: center; }
