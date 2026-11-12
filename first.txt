@@ -1,0 +1,11 @@
+sya ingin bikin mac os indikator whimsical untuk menampilkan avatar kecil bergerak dan hidup (speerti fitur whimsical pet yang menemani kita di desktop), avatar pet itu bisa ngapain aja, jadi seolah2 live dan ada hal2 yang tak terduga bisa dia lakukan, tapi semua hanya mainan dan bukan melakukan hal2 yang berbahya terkait security dsb.
+
+ini contoh mac os indikator yang pernah saya bikin, tapi ini tentang indikator ai todo dan calnder mac os. saya ingin anda peljaari saja bgmn saya membuat struktur, ci/cd, dashboard settingnya, dan designnya.
+https://github.com/kikiraihan/mac-os-ai-todo
+https://github.com/kikiraihan/our-life-planner-calendar-mac-os
+
+ini contoh fitur open pet di layar tapi terkait claude
+https://github.com/OpenPetsHQ/openpets
+
+ini skill untuk membuat pixelate style
+https://github.com/SpriteCook/claude-plugin
