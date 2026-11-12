@@ -1,4 +1,4 @@
-// Package app: server HTTP Temani — API web pengguna (/api/…), API admin (/api/admin/…,
+// Package app: server HTTP Temu — API web pengguna (/api/…), API admin (/api/admin/…,
 // sesi & cookie terpisah), API aplikasi Mac (/api/app/…, token perangkat), dan SPA Vue.
 package app
 

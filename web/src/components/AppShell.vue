@@ -20,7 +20,7 @@ async function out() {
 <template>
   <div class="shell">
     <header class="bar">
-      <RouterLink to="/pet" class="brand pixel">Temani</RouterLink>
+      <RouterLink to="/pet" class="brand pixel">Temu</RouterLink>
       <nav aria-label="Menu utama">
         <RouterLink v-for="n in nav" :key="n.to" :to="n.to" :class="{ here: route.path.startsWith(n.to) }">{{ n.label }}</RouterLink>
       </nav>

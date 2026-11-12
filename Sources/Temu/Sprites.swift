@@ -1,4 +1,4 @@
-// Temani — pixel art pet & properti. Semua sprite ditulis sebagai teks (1 karakter = 1 piksel),
+// Temu — pixel art pet & properti. Semua sprite ditulis sebagai teks (1 karakter = 1 piksel),
 // jadi tidak ada file gambar dan installer satu-file tetap bisa membawa semuanya.
 // Pratinjau tanpa Mac: python3 scripts/preview-sprites.py  → docs/sprites.png
 //
@@ -454,7 +454,7 @@ enum Frame: Int, CaseIterable {
 let cellPixels = 32
 
 /// Tampilan seekor pet: 16 gambar 32×32, menghadap kanan.
-/// Sumbernya pet bawaan (digambar dari teks di atas) atau sheet PNG 128×128 dari akun Temani.
+/// Sumbernya pet bawaan (digambar dari teks di atas) atau sheet PNG 128×128 dari akun Temu.
 final class Skin {
     let frames: [CGImage]
 

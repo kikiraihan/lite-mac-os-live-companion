@@ -51,7 +51,7 @@ jobs:
       - name: go test (termasuk integrasi PostgreSQL)
         working-directory: server
         env:
-          TEMANI_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+          TEMU_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
         run: go test -count=1 ./...
       - name: govulncheck
         working-directory: server
@@ -103,7 +103,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build image
-        run: docker build -t temani:ci .
+        run: docker build -t temu:ci .
       - name: Validasi docker-compose.yml
         run: |
           cp .env.example .env

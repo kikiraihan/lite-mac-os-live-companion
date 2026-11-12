@@ -44,7 +44,7 @@ func Load() (Config, error) {
 		Env:            env("APP_ENV", "development"),
 		Addr:           env("APP_ADDR", ":8080"),
 		PublicURL:      strings.TrimRight(env("PUBLIC_URL", "http://localhost:8080"), "/"),
-		DatabaseURL:    env("DATABASE_URL", "postgres://temani:temani@localhost:5432/temani?sslmode=disable"),
+		DatabaseURL:    env("DATABASE_URL", "postgres://temu:temu@localhost:5432/temu?sslmode=disable"),
 		WebDir:         env("WEB_DIR", "../web/dist"),
 		TrustProxy:     envBool("TRUST_PROXY"),
 		AIMock:         envBool("AI_MOCK"),

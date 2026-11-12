@@ -1,4 +1,4 @@
-// Temani — server web (API + SPA) dan worker generate dalam satu proses.
+// Temu — server web (API + SPA) dan worker generate dalam satu proses.
 //
 //	server                                   jalankan server
 //	server admin:create EMAIL PASSWORD [NAMA] buat / reset superadmin (login di /admin/login)
@@ -68,7 +68,7 @@ func main() {
 		defer cancel()
 		hs.Shutdown(sctx)
 	}()
-	log.Printf("Temani mendengarkan di %s (%s)", cfg.Addr, cfg.PublicURL)
+	log.Printf("Temu mendengarkan di %s (%s)", cfg.Addr, cfg.PublicURL)
 	if err := hs.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
 	}

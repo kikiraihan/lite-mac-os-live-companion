@@ -23,21 +23,21 @@ import (
 	"github.com/kikiraihan/lite-mac-os-live-companion/server/internal/sprite"
 )
 
-// Test integrasi: butuh PostgreSQL. Dilewati kalau TEMANI_TEST_DATABASE_URL kosong.
+// Test integrasi: butuh PostgreSQL. Dilewati kalau TEMU_TEST_DATABASE_URL kosong.
 //
-//	TEMANI_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable go test ./...
+//	TEMU_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable go test ./...
 func testServer(t *testing.T, mock bool) (*Server, *httptest.Server) {
 	t.Helper()
-	base := os.Getenv("TEMANI_TEST_DATABASE_URL")
+	base := os.Getenv("TEMU_TEST_DATABASE_URL")
 	if base == "" {
-		t.Skip("TEMANI_TEST_DATABASE_URL kosong — test integrasi dilewati")
+		t.Skip("TEMU_TEST_DATABASE_URL kosong — test integrasi dilewati")
 	}
 	ctx := context.Background()
 	root, err := db.Open(ctx, base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	name := "temani_test_" + strings.ToLower(security.RandomCode(10))
+	name := "temu_test_" + strings.ToLower(security.RandomCode(10))
 	if _, err := root.ExecContext(ctx, `CREATE DATABASE `+name); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func testServer(t *testing.T, mock bool) (*Server, *httptest.Server) {
 	if err := db.Migrate(ctx, conn); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config.Config{Env: "test", PublicURL: "http://temani.test", AppSecret: bytes.Repeat([]byte{7}, 32),
+	cfg := config.Config{Env: "test", PublicURL: "http://temu.test", AppSecret: bytes.Repeat([]byte{7}, 32),
 		SessionTTL: time.Hour, AITimeout: 10 * time.Second, AIMock: mock, WebDir: t.TempDir()}
 	s := New(conn, cfg)
 	ts := httptest.NewServer(s.Routes())

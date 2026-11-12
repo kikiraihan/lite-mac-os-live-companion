@@ -54,7 +54,7 @@ type Template struct {
 	ID, Title, DefaultName string
 }
 
-// Templates harus sama dengan Art.species di Sources/Temani/Sprites.swift
+// Templates harus sama dengan Art.species di Sources/Temu/Sprites.swift
 // (PNG-nya dibuat scripts/preview-sprites.py).
 var Templates = []Template{
 	{"oren", "Kucing Oren", "Mochi"},

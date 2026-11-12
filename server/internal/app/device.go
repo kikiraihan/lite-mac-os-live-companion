@@ -108,7 +108,7 @@ func (s *Server) linkPoll(w http.ResponseWriter, r *http.Request) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return httpx.Err(410, "link_expired", "Kode sudah dipakai.")
 	}
-	token := "tmn_" + security.RandomToken(32)
+	token := "tmu_" + security.RandomToken(32)
 	if _, err := s.DB.ExecContext(r.Context(), `INSERT INTO devices(user_id, name, token_hash) VALUES($1,$2,$3)`, user.String, name, security.SHA256(token)); err != nil {
 		return err
 	}

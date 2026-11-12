@@ -27,7 +27,7 @@ async function out() {
   <div class="admin">
     <aside class="rail">
       <div class="who">
-        <span class="pixel brand">Temani</span>
+        <span class="pixel brand">Temu</span>
         <span class="badge">Admin</span>
       </div>
       <nav aria-label="Menu admin">

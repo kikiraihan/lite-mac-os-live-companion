@@ -113,7 +113,7 @@ func (c Connection) request(ctx context.Context, method, path, contentType strin
 		req.Header.Set("Content-Type", contentType)
 	}
 	if c.Kind == "openrouter" {
-		req.Header.Set("X-Title", "Temani")
+		req.Header.Set("X-Title", "Temu")
 	}
 	return req, nil
 }

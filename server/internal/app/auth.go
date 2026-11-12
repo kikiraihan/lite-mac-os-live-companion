@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	sessionCookie = "temani_session"
-	csrfCookie    = "temani_csrf"
+	sessionCookie = "temu_session"
+	csrfCookie    = "temu_csrf"
 )
 
 var (

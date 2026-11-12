@@ -1,4 +1,4 @@
-// Temani — jendela Pengaturan (tab Umum, Pet, Akun, Tentang)
+// Temu — jendela Pengaturan (tab Umum, Pet, Akun, Tentang)
 // Gaya mengikuti jendela Pengaturan LiteCalendar: kartu ala System Settings, satu baris = judul + keterangan + satu kontrol.
 
 import Cocoa
@@ -338,7 +338,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 return Form.row(head, nil, nil)
             }
             let manage = Form.row("Atur pet", "Membuat pet, menggambar ulang, dan memilih yang tampil di Mac dilakukan di web.",
-                                  Form.button("Buka web Temani", app, #selector(AppDelegate.openWeb)))
+                                  Form.button("Buka web Temu", app, #selector(AppDelegate.openWeb)))
             if rows.isEmpty {
                 return [Form.section("Pet di Mac ini", [
                     Form.row("Belum ada pet yang tampil", "Nyalakan \"Tampil di Mac\" pada pet-mu di web.", nil), manage,
@@ -360,7 +360,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Nama", "Kosongkan untuk memakai nama bawaannya.", nameField),
             ]),
             Form.section("Pet buatan sendiri", [
-                Form.row("Hubungkan akun", "Gambar pet sendiri, buat dari foto, atau minta pet teman lewat web Temani.",
+                Form.row("Hubungkan akun", "Gambar pet sendiri, buat dari foto, atau minta pet teman lewat web Temu.",
                          Form.button("Hubungkan akun…", app, #selector(AppDelegate.linkAccount))),
             ]),
         ]
@@ -373,7 +373,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         line.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         var rows: [NSView] = [line]
         if acc.isLinked {
-            rows.append(Form.row("Web Temani", "Kelola pet, teman, dan Mac yang terhubung.",
+            rows.append(Form.row("Web Temu", "Kelola pet, teman, dan Mac yang terhubung.",
                                  Form.button("Buka di browser", app, #selector(AppDelegate.openWeb))))
             rows.append(Form.row("Segarkan", "Pet diperbarui otomatis tiap menit.", Form.button("Segarkan sekarang", app, #selector(AppDelegate.syncNow))))
             rows.append(Form.row("Putuskan akun", "Token dihapus dari Keychain Mac ini dan dicabut di server.",
@@ -394,7 +394,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         return [
             Form.section("Akun", rows),
             Form.section("Server", [
-                Form.row("Alamat server", "Hanya diubah kalau Anda menjalankan server Temani sendiri. Putuskan akun dulu untuk mengubahnya.", serverField),
+                Form.row("Alamat server", "Hanya diubah kalau Anda menjalankan server Temu sendiri. Putuskan akun dulu untuk mengubahnya.", serverField),
             ]),
         ]
     }
@@ -404,7 +404,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         icon.widthAnchor.constraint(equalToConstant: 64).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 64).isActive = true
         let head = Form.stack([icon, Form.stack([Form.label(appDisplayName, size: 15, weight: .semibold),
-                                                 Form.note("Versi \(Updater.current) · pet pixel kecil di layar Mac")],
+                                                 Form.note("Versi \(Updater.current) · A little way to be together.")],
                                                 spacing: 2)],
                               vertical: false, spacing: 12)
         let up = app.updater
@@ -419,7 +419,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
             ]),
             Form.section("Hanya mainan", [
                 Form.row("Yang dilakukan \(appDisplayName)", "Menggambar pet di layar, membaca posisi kursor, dan (kalau akun terhubung) mengambil " +
-                         "gambar pet serta sapaan teman dari server Temani.", nil),
+                         "gambar pet serta sapaan teman dari server Temu.", nil),
                 Form.row("Yang tidak dilakukan", "Tidak membaca layar, ketikan, berkas, atau aplikasi lain. Tidak meminta izin Aksesibilitas, " +
                          "Perekaman Layar, atau akses lain. Kode sumbernya terbuka.",
                          Form.button("Lihat kode", self, #selector(openSource))),

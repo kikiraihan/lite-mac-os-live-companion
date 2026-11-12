@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Deploy script Temani yang dijalankan DI VPS (lewat `make deploy`, SSH manual, atau
+# Deploy script Temu yang dijalankan DI VPS (lewat `make deploy`, SSH manual, atau
 # GitHub Actions). Diadaptasi dari Pancar/Racik. Alurnya:
 #
 #   1. pastikan .env ada, terisi aman, & repo bersih
@@ -27,7 +27,7 @@ set -euo pipefail
 if [ "${DEPLOY_SELF_COPY:-0}" != "1" ]; then
 	_self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 	_root="$(cd "$(dirname "$_self")/.." && pwd)"
-	_copy="$(mktemp -t temani-deploy.XXXXXX)"
+	_copy="$(mktemp -t temu-deploy.XXXXXX)"
 	cp "$_self" "$_copy"
 	chmod +x "$_copy"
 	DEPLOY_SELF_COPY=1 DEPLOY_APP_DIR="$_root" DEPLOY_SELF_TMP="$_copy" exec "$_copy" "$@"
@@ -78,7 +78,7 @@ val="$(env_get APP_SECRET)"
 if ! printf '%s' "$val" | grep -Eq '^[0-9a-fA-F]{64}$'; then
 	die "APP_SECRET di .env harus 64 karakter hex. Isi dengan: openssl rand -hex 32"
 fi
-if [ "$(env_get DB_PASSWORD)" = "temani" ] || [ -z "$(env_get DB_PASSWORD)" ]; then
+if [ "$(env_get DB_PASSWORD)" = "temu" ] || [ -z "$(env_get DB_PASSWORD)" ]; then
 	warn "DB_PASSWORD masih bawaan. Port db tidak dibuka ke internet, tapi sebaiknya diganti."
 fi
 case "$(env_get AI_MOCK)" in
@@ -97,12 +97,12 @@ fi
 if [ "$SKIP_BACKUP" != "1" ] && [ -n "$(compose ps -q --status running db 2>/dev/null)" ]; then
 	mkdir -p backups
 	stamp="$(date +%Y%m%d-%H%M%S)"
-	file="backups/temani-predeploy-$stamp.sql.gz"
-	if compose exec -T db pg_dump -U temani -d temani --clean --if-exists | gzip > "$file" \
+	file="backups/temu-predeploy-$stamp.sql.gz"
+	if compose exec -T db pg_dump -U temu -d temu --clean --if-exists | gzip > "$file" \
 		&& [ "$(gzip -cd "$file" | head -c 1 | wc -c)" -gt 0 ]; then
 		log "Backup DB -> $file ($(du -h "$file" | cut -f1))"
 		# Simpan N backup pre-deploy terakhir saja.
-		ls -1t backups/temani-predeploy-*.sql.gz 2>/dev/null | tail -n +"$((KEEP_BACKUPS + 1))" | xargs -r rm -f
+		ls -1t backups/temu-predeploy-*.sql.gz 2>/dev/null | tail -n +"$((KEEP_BACKUPS + 1))" | xargs -r rm -f
 	else
 		rm -f "$file"
 		warn "Backup DB gagal (db mungkin belum punya data). Lanjut deploy."

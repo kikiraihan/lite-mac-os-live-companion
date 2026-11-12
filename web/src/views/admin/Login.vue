@@ -23,7 +23,7 @@ async function submit() {
 <template>
   <div class="wrap">
     <div class="px box">
-      <p class="row"><span class="pixel brand">Temani</span><span class="badge">Admin</span></p>
+      <p class="row"><span class="pixel brand">Temu</span><span class="badge">Admin</span></p>
       <h2>Masuk admin</h2>
       <form class="stack" @submit.prevent="submit">
         <label class="field"><span>Email</span>

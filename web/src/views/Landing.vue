@@ -27,7 +27,7 @@ onBeforeUnmount(() => clearInterval(timer))
 <template>
   <div class="landing">
     <header class="bar">
-      <span class="brand pixel">Temani</span>
+      <span class="brand pixel">Temu</span>
       <span class="grow"></span>
       <template v-if="session.user">
         <RouterLink to="/pet">Buka pet-ku</RouterLink>
@@ -40,13 +40,13 @@ onBeforeUnmount(() => clearInterval(timer))
 
     <section class="hero">
       <div class="pitch">
-        <h1>Ada yang nemenin di pojok layar.</h1>
+        <h1>A little way to be together.</h1>
         <p class="lead">
-          Temani adalah pet pixel kecil yang hidup di Mac-mu. Dia jalan-jalan di tepi layar, ketiduran,
-          joget sendiri, kadang pulang bawa bunga. Bikin pet-mu, lalu titipkan ke Mac teman.
+          Temu menghadirkan versi pixel kecil dirimu di layar Mac orang terdekatmu. Dia jalan-jalan di tepi
+          layar, ketiduran, joget sendiri, dan menyampaikan pesanmu. Jauh, tapi rasanya tetap di sebelah.
         </p>
         <div class="row">
-          <RouterLink class="btn primary" :to="session.user ? '/studio' : '/daftar'">Bikin pet-ku</RouterLink>
+          <RouterLink class="btn primary" :to="session.user ? '/studio/foto' : '/daftar'">Buat versi pixel-ku</RouterLink>
           <a class="btn" :href="download" target="_blank" rel="noopener">Unduh untuk Mac</a>
         </div>
         <p class="small muted">Gratis. macOS 13 ke atas, Apple Silicon dan Intel.</p>
@@ -54,7 +54,7 @@ onBeforeUnmount(() => clearInterval(timer))
 
       <figure class="px screen">
         <div class="menubar">
-          <span class="apple pixel">Temani</span><span>Berkas</span><span>Tampilan</span>
+          <span class="apple pixel">Temu</span><span>Berkas</span><span>Tampilan</span>
           <span class="grow"></span>
           <PetSprite src="/api/templates/oren.png" anim="walk" :scale="0.75" />
           <span>{{ clock }}</span>
@@ -62,7 +62,7 @@ onBeforeUnmount(() => clearInterval(timer))
         <div class="desk">
           <div class="px win">
             <div class="winbar"><i></i><i></i><i></i><b>laporan-final-banget.txt</b></div>
-            <p>Bab 3 belum selesai, tapi tidak apa-apa.<br />Ada yang nungguin di bawah.</p>
+            <p>Bab 3 belum selesai, tapi tidak apa-apa.<br />Dia ada di bawah, nemenin.</p>
           </div>
           <Playground :pets="heroPets" :height="132" :ground="14" :scale="3" />
           <div class="dock" aria-hidden="true"></div>
@@ -71,8 +71,26 @@ onBeforeUnmount(() => clearInterval(timer))
       </figure>
     </section>
 
+    <section class="band duo">
+      <div>
+        <h2>Hadir di desktop dia</h2>
+        <p class="measure">
+          Buat versi pixel dirimu dari foto, lalu kirim tautan ke pasangan atau sahabatmu. Begitu dia mengizinkan,
+          kamu ikut jalan-jalan di layar Mac-nya, di samping pet miliknya sendiri. Kirim sapaan atau peluk,
+          dan versi kecilmu yang menyampaikannya di sana.
+        </p>
+      </div>
+      <div class="px chat" aria-hidden="true">
+        <div class="say">Raka: semangat presentasinya ♥</div>
+        <div class="row pair">
+          <PetSprite src="/api/templates/hitam.png" anim="wave" :scale="3" />
+          <PetSprite src="/api/templates/oren.png" anim="happy" :scale="3" flip />
+        </div>
+      </div>
+    </section>
+
     <section class="band">
-      <h2>Tiga cara punya pet</h2>
+      <h2>Tiga cara membuat dirimu yang kecil</h2>
       <div class="ways">
         <article>
           <PetSprite src="/api/templates/beruang.png" anim="happy" :scale="3" />
@@ -87,41 +105,24 @@ onBeforeUnmount(() => clearInterval(timer))
         <article>
           <PetSprite src="/api/templates/kelinci.png" anim="wave" :scale="3" />
           <h3>Dari fotomu</h3>
-          <p>Unggah foto, dan AI menggambar versi pixel-mu dalam 16 pose. Bisa juga lewat ChatGPT-mu sendiri.</p>
+          <p>Unggah foto, dan AI menggambar dirimu versi pixel dalam 16 pose. Bisa juga lewat ChatGPT-mu sendiri.</p>
         </article>
       </div>
     </section>
 
-    <section class="band duo">
-      <div>
-        <h2>Lebih ramai kalau berdua</h2>
-        <p class="measure">
-          Undang teman lewat satu tautan. Kalau kamu suka pet-nya, minta saja: begitu dia setuju, pet itu ikut
-          jalan-jalan di Mac-mu, di samping pet-mu sendiri. Kirim sapaan, dan pet di Mac temanmu yang menyampaikannya.
-        </p>
-      </div>
-      <div class="px chat" aria-hidden="true">
-        <div class="say">Dina menyapa: makan siang yuk</div>
-        <div class="row pair">
-          <PetSprite src="/api/templates/hitam.png" anim="wave" :scale="3" />
-          <PetSprite src="/api/templates/oren.png" anim="happy" :scale="3" flip />
-        </div>
-      </div>
-    </section>
-
     <section class="band">
-      <h2>Cuma mainan, sungguh</h2>
+      <h2>Hanya kehadiran, bukan pengawasan</h2>
       <ul class="plain measure">
         <li>Tidak membaca layar, ketikan, atau berkas di Mac-mu.</li>
         <li>Tidak butuh izin Aksesibilitas atau Perekaman Layar.</li>
-        <li>Aplikasi Mac hanya mengambil gambar pet dan sapaan teman dari akunmu.</li>
+        <li>Aplikasi Mac hanya mengambil gambar pet dan sapaan dari orang yang kamu izinkan.</li>
         <li>Foto yang kamu unggah dihapus begitu pet-nya selesai digambar.</li>
         <li>Kode sumbernya terbuka di GitHub.</li>
       </ul>
     </section>
 
     <footer class="foot small muted">
-      <span>Temani</span>
+      <span>Temu · A little way to be together.</span>
       <a href="https://github.com/kikiraihan/lite-mac-os-live-companion" target="_blank" rel="noopener">Kode sumber</a>
     </footer>
   </div>

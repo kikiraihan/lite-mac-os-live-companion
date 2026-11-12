@@ -7,7 +7,7 @@
 #
 # Catatan: rollback hanya memundurkan KODE. Migrasi SQL yang sudah dijalankan versi
 # baru tidak ikut mundur — kalau perlu, restore backup pre-deploy:
-#   make restore FILE=backups/temani-predeploy-<timestamp>.sql.gz
+#   make restore FILE=backups/temu-predeploy-<timestamp>.sql.gz
 #
 set -euo pipefail
 

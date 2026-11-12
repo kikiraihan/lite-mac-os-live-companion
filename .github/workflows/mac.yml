@@ -1,9 +1,9 @@
 name: Mac app
 
-# Build Temani.app di mesin macOS GitHub (tidak ada Mac di lingkungan pengembangan agen).
+# Build Temu.app di mesin macOS GitHub (tidak ada Mac di lingkungan pengembangan agen).
 # Rilis otomatis: naikkan CFBundleShortVersionString di Resources/Info.plist (sama dengan VERSION),
-# lalu merge ke main → tag v<versi> + GitHub Release berisi Temani.zip & install-Temani.zip.
-# "Update sekarang" di aplikasi mengambil Temani.zip dari rilis terbaru.
+# lalu merge ke main → tag v<versi> + GitHub Release berisi Temu.zip & install-Temu.zip.
+# "Update sekarang" di aplikasi mengambil Temu.zip dari rilis terbaru.
 on:
   push:
     paths:
@@ -26,7 +26,7 @@ permissions:
   contents: write
 
 env:
-  APP: Temani
+  APP: Temu
 
 jobs:
   build:
@@ -48,12 +48,15 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build Temani.app (universal)
+      - name: Build Temu.app (universal)
         run: ARCH=universal ./scripts/build.sh
 
       - name: Cek bundle
         run: |
-          codesign -d -r- "build/$APP.app" 2>&1 | grep -q 'designated => identifier "id.local.temani"$'
+          # tanda tangan ad-hoc: requirement-nya berupa cdhash, jadi yang dicek identifier-nya
+          ID=$(codesign -dv "build/$APP.app" 2>&1 | sed -n 's/^Identifier=//p')
+          echo "Identifier: $ID"
+          test "$ID" = "id.local.temu" || { echo "::error::identifier codesign '$ID' ≠ id.local.temu"; exit 1; }
           lipo -archs "build/$APP.app/Contents/MacOS/$APP"
           plutil -lint "build/$APP.app/Contents/Info.plist"
 
@@ -63,7 +66,7 @@ jobs:
           "build/$APP.app/Contents/MacOS/$APP" &
           PID=$!
           sleep 6
-          if kill -0 "$PID" 2>/dev/null; then kill "$PID"; echo "Masih hidup setelah 6 detik — OK"; else echo "::error::Temani keluar sendiri saat dijalankan"; exit 1; fi
+          if kill -0 "$PID" 2>/dev/null; then kill "$PID"; echo "Masih hidup setelah 6 detik — OK"; else echo "::error::Temu keluar sendiri saat dijalankan"; exit 1; fi
 
       - name: Buat installer & zip
         run: |
@@ -73,19 +76,19 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Temani
+          name: Temu
           path: |
-            dist/Temani.zip
-            dist/install-Temani.zip
+            dist/Temu.zip
+            dist/install-Temu.zip
 
       - name: Rilis otomatis (push ke main, versi belum dirilis)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ver.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: Temani ${{ steps.ver.outputs.version }}
+          name: Temu ${{ steps.ver.outputs.version }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: |
-            dist/Temani.zip
-            dist/install-Temani.zip
+            dist/Temu.zip
+            dist/install-Temu.zip

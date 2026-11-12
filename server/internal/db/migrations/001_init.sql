@@ -1,4 +1,4 @@
--- Temani — skema awal.
+-- Temu — skema awal.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ---------------- pengguna ----------------

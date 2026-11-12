@@ -10,6 +10,7 @@ const loading = ref(true)
 const invite = ref(null), copied = ref(false)
 const handle = ref(''), adding = ref(false)
 const nudging = ref(null), nudgeText = ref('')
+const QUICK = ['Peluk dari jauh ♥', 'Kangen', 'Semangat ya!', 'Sudah makan?', 'Istirahat dulu, yuk']
 const removing = ref(null)
 
 async function load() {
@@ -153,6 +154,9 @@ async function unfriend() {
 
     <Modal v-if="nudging" :title="`Sapa ${nudging.name}`" @close="nudging = null">
       <form class="stack" @submit.prevent="sendNudge">
+        <div class="row quick" role="group" aria-label="Sapaan cepat">
+          <button v-for="q in QUICK" :key="q" type="button" class="btn small" :class="{ sun: nudgeText === q }" @click="nudgeText = q">{{ q }}</button>
+        </div>
         <label class="field"><span>Pesan</span>
           <input class="input" v-model="nudgeText" maxlength="80" placeholder="Makan siang yuk" autofocus />
           <small>Muncul sebagai balon kata pet di Mac-nya. Boleh kosong, nanti pet-nya cuma melambai.</small>
@@ -172,6 +176,7 @@ async function unfriend() {
 
 <style scoped>
 .ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; }
+.quick { gap: 2px; }
 .line { padding: 10px 0; border-bottom: 1px solid var(--langit-tua); }
 h2 { margin-bottom: 12px; }
 .friend { padding: 20px 0; border-top: 3px solid var(--tinta); }

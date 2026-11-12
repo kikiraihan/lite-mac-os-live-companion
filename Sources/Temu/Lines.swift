@@ -1,4 +1,4 @@
-// Temani — celoteh pet (balon kata). Semua teks ada di sini supaya mudah ditambah.
+// Temu — celoteh pet (balon kata). Semua teks ada di sini supaya mudah ditambah.
 
 import Foundation
 

@@ -4,11 +4,13 @@ Panduan untuk agen AI (Claude Code, dsb.) yang bekerja di repo ini.
 
 ## Proyek
 
-**Temani**: pet pixel kecil yang hidup di layar Mac, dengan akun, pertemanan, dan pet buatan sendiri.
+**Temu** — *A little way to be together.* Versi pixel kecil dirimu / pet-mu yang hidup di layar Mac orang
+terdekat (pasangan, sahabat), dengan akun, pertemanan, pet buatan sendiri, dan sapaan. Kesan yang dijaga:
+hadir dan hangat, bukan mengawasi.
 
 | Bagian | Folder | Isi |
 |---|---|---|
-| Aplikasi Mac | `Sources/Temani/`, `Resources/` | Swift + AppKit tanpa dependensi; ikon menu bar + pet di desktop |
+| Aplikasi Mac | `Sources/Temu/`, `Resources/` | Swift + AppKit tanpa dependensi; ikon menu bar + pet di desktop |
 | Server | `server/` | Go + PostgreSQL: API pengguna, API admin, API aplikasi Mac, worker generate |
 | Web | `web/` | Vue 3 + Vite: sisi pengguna dan ruang admin (satu SPA, dua sesi terpisah) |
 
@@ -17,7 +19,7 @@ Rancangan visual web: `docs/DESIGN.md`. Deploy: `DEPLOY.md`.
 ## Cek sebelum commit
 
 ```bash
-cd server && gofmt -l . && go vet ./... && TEMANI_TEST_DATABASE_URL=postgres://… go test -count=1 ./...
+cd server && gofmt -l . && go vet ./... && TEMU_TEST_DATABASE_URL=postgres://… go test -count=1 ./...
 cd web && npm run build
 python3 scripts/preview-sprites.py     # hanya kalau gambar di Sprites.swift berubah
 ```
@@ -33,11 +35,11 @@ Urutan 16 pose sama persis di:
 
 - `server/internal/sprite/sprite.go` (`Frames`)
 - `web/src/lib/sheet.js` (`FRAMES`)
-- `Sources/Temani/Sprites.swift` (`enum Frame`) dan `scripts/preview-sprites.py` (`FRAMES`)
+- `Sources/Temu/Sprites.swift` (`enum Frame`) dan `scripts/preview-sprites.py` (`FRAMES`)
 
 Mengubah urutan / jumlah pose = mengubah keempatnya sekaligus, dan pet lama di database jadi salah.
 
-Gambar pet bawaan hanya ditulis di **`Sources/Temani/Sprites.swift`** (teks, 1 karakter = 1 piksel).
+Gambar pet bawaan hanya ditulis di **`Sources/Temu/Sprites.swift`** (teks, 1 karakter = 1 piksel).
 `server/internal/sprite/templates/*.png` dan `docs/sprites.png` adalah hasil render — jangan diedit tangan,
 jalankan `make sprites`. CI menolak kalau keduanya tidak sinkron.
 
@@ -80,6 +82,6 @@ Versi `a.b.c` disimpan di `VERSION` dan `Resources/Info.plist` (`CFBundleShortVe
 | `b` | fitur baru, atau perubahan gaya besar |
 | `c` | perbaikan bug, atau perubahan gaya kecil |
 
-Merge ke `main` dengan versi yang belum punya tag → rilis `v<versi>` (Temani.zip + installer). Tanpa naik
+Merge ke `main` dengan versi yang belum punya tag → rilis `v<versi>` (Temu.zip + installer). Tanpa naik
 versi → tidak ada rilis. PR yang hanya mengubah server / web / dokumentasi / CI tidak menaikkan versi.
 Sebutkan versi baru di deskripsi PR.
