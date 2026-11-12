@@ -1,0 +1,146 @@
+/* Temani — sistem desain.
+   Dunia visualnya: layar Mac di sore hari, dengan pet pixel yang berjalan di tepi bawahnya.
+   - Warna diambil dari pet bawaan: tinta = warna garis pixel, jeruk = Mochi si kucing oren.
+   - Kotak "pixel": tanpa border-radius; sudutnya hilang satu piksel (box-shadow 4 sisi).
+   - Pixelify Sans hanya untuk judul & angka (≥ 20px); isi memakai Rubik.
+   - Satu-satunya hal yang ramai adalah pet-nya. Sisanya tenang. */
+
+:root {
+  --langit: #e7ecff;      /* latar halaman */
+  --langit-tua: #cbd4fb;  /* lantai, garis halus */
+  --tinta: #2a2140;       /* teks & garis pixel */
+  --tinta-2: #635b80;     /* teks sekunder */
+  --kertas: #ffffff;
+  --stroberi: #ff5a7a;    /* aksi utama */
+  --jeruk: #f7a552;
+  --lemon: #ffd23c;
+  --daun: #2f9e77;
+  --merah: #c92a45;
+  --px: 3px;              /* tebal satu "piksel" antarmuka */
+  --pixel: 'Pixelify Sans', 'Rubik', system-ui, sans-serif;
+  --body: 'Rubik', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --lantai: 104px;        /* tinggi area lantai tempat pet berjalan */
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--langit);
+  color: var(--tinta);
+  font: 400 16px/1.55 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, p { margin: 0; }
+h1, h2, h3, .pixel { font-family: var(--pixel); font-weight: 700; line-height: 1.15; letter-spacing: 0.01em; }
+h1 { font-size: 40px; }
+h2 { font-size: 28px; }
+h3 { font-size: 20px; }
+a { color: inherit; text-underline-offset: 3px; }
+img, canvas { display: block; }
+canvas.sprite { image-rendering: pixelated; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid #4d7dff; outline-offset: 4px; }
+.muted { color: var(--tinta-2); }
+.small { font-size: 14px; }
+.measure { max-width: 62ch; }
+.row { display: flex; align-items: center; gap: var(--gap, 12px); flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.grow { flex: 1 1 auto; min-width: 0; }
+
+/* ---- kotak pixel ---- */
+.px {
+  background: var(--kertas);
+  box-shadow: 0 calc(-1 * var(--px)) 0 0 var(--tinta), 0 var(--px) 0 0 var(--tinta),
+    calc(-1 * var(--px)) 0 0 0 var(--tinta), var(--px) 0 0 0 var(--tinta);
+  margin: var(--px);
+}
+.card { padding: 20px; }
+.card.flat { box-shadow: none; margin: 0; background: transparent; padding: 0; }
+
+/* ---- tombol ---- */
+.btn {
+  --bg: var(--kertas);
+  appearance: none; border: 0; cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 40px; padding: 8px 16px; margin: var(--px) var(--px) calc(var(--px) + 4px);
+  background: var(--bg); color: var(--tinta); font-weight: 600; line-height: 1.2;
+  box-shadow: 0 calc(-1 * var(--px)) 0 0 var(--tinta), calc(-1 * var(--px)) 0 0 0 var(--tinta), var(--px) 0 0 0 var(--tinta),
+    0 var(--px) 0 0 var(--tinta), 0 calc(var(--px) + 4px) 0 0 var(--tinta);
+  transition: transform 60ms steps(2), box-shadow 60ms steps(2);
+}
+.btn:hover { filter: brightness(0.97); }
+.btn:active, .btn.pressed {
+  transform: translateY(4px);
+  box-shadow: 0 calc(-1 * var(--px)) 0 0 var(--tinta), calc(-1 * var(--px)) 0 0 0 var(--tinta), var(--px) 0 0 0 var(--tinta),
+    0 var(--px) 0 0 var(--tinta), 0 var(--px) 0 0 var(--tinta);
+}
+.btn[disabled] { cursor: not-allowed; opacity: 0.55; }
+.btn.primary { --bg: var(--stroberi); }
+.btn.sun { --bg: var(--lemon); }
+.btn.danger { color: var(--merah); }
+.btn.small { min-height: 32px; padding: 4px 10px; font-size: 14px; }
+.btn.block { display: flex; width: calc(100% - 2 * var(--px)); }
+.link { background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; color: inherit; }
+.link.danger { color: var(--merah); }
+
+/* ---- isian ---- */
+.field { display: block; }
+.field > span { display: block; font-weight: 500; margin-bottom: 6px; }
+.field > small { display: block; margin-top: 6px; color: var(--tinta-2); font-size: 14px; }
+.input {
+  width: calc(100% - 2 * var(--px)); min-height: 40px; padding: 8px 12px; border: 0; background: var(--kertas);
+  margin: var(--px);
+  box-shadow: 0 calc(-1 * var(--px)) 0 0 var(--tinta), 0 var(--px) 0 0 var(--tinta),
+    calc(-1 * var(--px)) 0 0 0 var(--tinta), var(--px) 0 0 0 var(--tinta);
+}
+.input:focus { outline: 3px solid #4d7dff; outline-offset: 4px; }
+textarea.input { min-height: 96px; resize: vertical; line-height: 1.5; }
+.input.mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 13px; }
+
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch i {
+  width: 44px; height: 22px; background: var(--langit-tua); position: relative; flex: none;
+  box-shadow: 0 calc(-1 * var(--px)) 0 0 var(--tinta), 0 var(--px) 0 0 var(--tinta),
+    calc(-1 * var(--px)) 0 0 0 var(--tinta), var(--px) 0 0 0 var(--tinta);
+  margin: var(--px);
+}
+.switch i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; background: var(--tinta); transition: left 80ms steps(3); }
+.switch input:checked + i { background: var(--daun); }
+.switch input:checked + i::after { left: 24px; background: var(--kertas); }
+.switch input:focus-visible + i { outline: 3px solid #4d7dff; outline-offset: 4px; }
+
+/* ---- label kecil ---- */
+.tag { display: inline-block; padding: 1px 8px; font-size: 13px; font-weight: 500; background: var(--langit-tua); color: var(--tinta); }
+.tag.ok { background: #c9f0df; }
+.tag.warn { background: var(--lemon); }
+.tag.bad { background: #ffd0d8; color: #8a1429; }
+
+.notice { padding: 12px 16px; background: #fff6cf; border-left: 6px solid var(--lemon); }
+.notice.bad { background: #ffe3e8; border-left-color: var(--merah); }
+.notice.ok { background: #dbf5e9; border-left-color: var(--daun); }
+
+.empty { padding: 28px 20px; text-align: left; border: 3px dashed var(--langit-tua); }
+.empty h3 { margin-bottom: 6px; }
+
+/* ---- tabel (admin) ---- */
+table.data { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.data th { text-align: left; font-weight: 600; padding: 8px 12px; border-bottom: 3px solid var(--tinta); white-space: nowrap; }
+table.data td { padding: 10px 12px; border-bottom: 1px solid var(--langit-tua); vertical-align: middle; }
+table.data tr:hover td { background: #f6f8ff; }
+.scroll-x { overflow-x: auto; }
+
+/* di akhir supaya menang atas margin .px / .btn / .input */
+.stack > * + * { margin-top: var(--gap, 16px); }
+.row > .input.grow { width: auto; flex: 1 1 160px; }
+.switch { white-space: nowrap; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 30px; }
+  h2 { font-size: 24px; }
+  .card { padding: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
