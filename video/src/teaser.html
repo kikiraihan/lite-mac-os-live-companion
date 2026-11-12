@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Temu — Teaser</title>
+<!--
+  Sumber video teaser Temu. Setiap frame ditentukan murni oleh waktu t (detik) lewat window.seek(t),
+  jadi render.js bisa memotret frame demi frame secara deterministik (tanpa requestAnimationFrame).
+  Buka langsung di browser untuk pratinjau: animasi berjalan otomatis bila tidak ada ?render.
+  Warna & huruf sama dengan web (docs/DESIGN.md): langit, tinta, stroberi, lemon, jeruk; Pixelify Sans + Rubik.
+  Pet diambil langsung dari server/internal/sprite/templates/*.png (hasil render Sprites.swift),
+  jadi video ikut berubah kalau gambar pet bawaan berubah (render ulang).
+-->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Rubik:wght@400;500;600&display=block">
+<style>
+  :root {
+    --langit: #e7ecff; --langit-tua: #cbd4fb; --tinta: #2a2140; --tinta-2: #635b80; --kertas: #fff;
+    --stroberi: #ff5a7a; --jeruk: #f7a552; --lemon: #ffd23c; --daun: #2f9e77;
+    --px: 6px; /* tebal satu "piksel" antarmuka di video (2× web) */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--langit); }
+  body { font-family: "Rubik", system-ui, sans-serif; color: var(--tinta); -webkit-font-smoothing: antialiased; }
+  #stage { position: absolute; inset: 0; overflow: hidden; }
+  .pixel { font-family: "Pixelify Sans", "Rubik", sans-serif; font-weight: 700; letter-spacing: .01em; }
+
+  /* kotak "pixel": tanpa radius, sudut hilang satu piksel (sama dengan .px di web) */
+  .px { background: var(--kertas);
+        box-shadow: 0 calc(-1 * var(--px)) 0 0 var(--tinta), 0 var(--px) 0 0 var(--tinta),
+                    calc(-1 * var(--px)) 0 0 0 var(--tinta), var(--px) 0 0 0 var(--tinta); }
+
+  /* Pet: satu sel dari sprite sheet 4×4 (lihat setPet) */
+  .pet { position: absolute; image-rendering: pixelated; background-repeat: no-repeat; }
+
+  /* Bilah menu (seperti menu bar Mac) dan lantai tempat pet berjalan */
+  .menubar { position: absolute; left: 0; right: 0; top: 0; height: 48px; background: var(--tinta); color: #e9e5f7;
+             display: flex; align-items: center; gap: 30px; padding: 0 28px; font-size: 21px; white-space: nowrap; z-index: 10; }
+  .menubar .brand { color: var(--jeruk); font-size: 26px; }
+  .menubar .grow { flex: 1; }
+  .menubar .slot { position: relative; width: 40px; height: 40px; }
+  .floor { position: absolute; left: 0; right: 0; top: 960px; bottom: 0; background: var(--langit-tua); border-top: var(--px) solid var(--tinta); }
+
+  .scene { position: absolute; inset: 0; opacity: 0; }
+  .center { position: absolute; left: 0; right: 0; text-align: center; }
+
+  /* Teks pendamping (rata kiri, tenang) */
+  .eyebrow { position: absolute; font-size: 26px; font-weight: 500; color: var(--tinta-2); }
+  .head { position: absolute; font-family: "Pixelify Sans", sans-serif; font-weight: 700; font-size: 68px; line-height: 1.12; }
+  .body { position: absolute; font-size: 30px; line-height: 1.5; color: var(--tinta-2); }
+  .mark { padding: 0 .12em; }
+
+  /* Layar Mac tiruan */
+  .mac { position: absolute; width: 840px; height: 600px; overflow: hidden; }
+  .mac .mbar { height: 38px; background: var(--tinta); color: #e9e5f7; display: flex; align-items: center; gap: 20px; padding: 0 16px;
+               font-size: 17px; white-space: nowrap; }
+  .mac .mbar .brand { color: var(--jeruk); font-size: 20px; }
+  .mac .mbar .grow { flex: 1; }
+  .mac .mbar .slot { position: relative; width: 32px; height: 32px; }
+  .desk { position: absolute; left: 0; right: 0; top: 38px; bottom: 0; background: var(--langit-tua); overflow: hidden; }
+  .dock { position: absolute; left: 0; right: 0; bottom: 0; height: 26px; background: #b4bff3; border-top: var(--px) solid var(--tinta); }
+  .win { position: absolute; left: 44px; top: 44px; width: 430px; font-size: 21px; line-height: 1.45; }
+  .winbar { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--langit); border-bottom: var(--px) solid var(--tinta); }
+  .winbar i { width: 12px; height: 12px; background: var(--tinta); }
+  .winbar b { margin-left: 8px; font-weight: 500; font-size: 18px; }
+  .win p { padding: 16px 18px; }
+
+  .tag { position: absolute; padding: 6px 14px; background: var(--lemon); font-weight: 500; font-size: 22px; white-space: nowrap;
+         transform: translateX(-50%); }
+  .zz { position: absolute; font-family: "Pixelify Sans", sans-serif; font-weight: 700; color: var(--tinta-2); opacity: 0; }
+  .heart { position: absolute; width: 28px; height: 24px; opacity: 0; z-index: 6; }
+  .cursor { position: absolute; width: 34px; height: 50px; opacity: 0; z-index: 8; }
+
+  /* Undangan di layar Mac */
+  .card { position: absolute; left: 200px; top: 150px; width: 460px; padding: 24px 26px; opacity: 0; z-index: 6; }
+  .card h4 { font-family: "Pixelify Sans", sans-serif; font-size: 30px; line-height: 1.15; }
+  .card p { font-size: 19px; color: var(--tinta-2); margin: 10px 0 18px; line-height: 1.4; }
+  .btns { display: flex; gap: 14px; justify-content: flex-end; }
+  .btn { padding: 10px 20px; font-weight: 600; font-size: 19px; background: var(--kertas);
+         box-shadow: 0 -3px 0 0 var(--tinta), 0 3px 0 0 var(--tinta), -3px 0 0 0 var(--tinta), 3px 0 0 0 var(--tinta), 0 8px 0 0 var(--tinta); }
+  .btn.primary { background: var(--stroberi); }
+  .bubble { position: absolute; padding: 10px 18px; background: var(--lemon); font-weight: 500; font-size: 24px; white-space: nowrap; opacity: 0; z-index: 5; }
+
+  /* Editor piksel */
+  .editor { position: absolute; width: 476px; }
+  .editor .bar { padding: 10px 16px; border-bottom: var(--px) solid var(--tinta); font-size: 20px; font-weight: 500; display: flex; justify-content: space-between; }
+  .canvas { position: relative; width: 448px; height: 448px; margin: 14px; background-color: #fff;
+            background-image: linear-gradient(var(--langit) 1px, transparent 1px), linear-gradient(90deg, var(--langit) 1px, transparent 1px);
+            background-size: 14px 14px; }
+  .paint { position: absolute; inset: 0; image-rendering: pixelated; background-repeat: no-repeat; }
+  .brush { position: absolute; width: 14px; height: 14px; outline: 3px solid var(--stroberi); }
+  .sheet { position: absolute; display: grid; grid-template-columns: repeat(4, 96px); gap: 10px; }
+  .cell { width: 96px; height: 96px; background-color: #fff; position: relative; opacity: 0; }
+  .cell .pet { left: 0; top: 0; }
+  .ways { position: absolute; display: flex; gap: 14px; }
+  .ways span { padding: 8px 16px; background: var(--kertas); font-size: 22px; font-weight: 500; opacity: 0;
+               box-shadow: 0 -3px 0 0 var(--tinta), 0 3px 0 0 var(--tinta), -3px 0 0 0 var(--tinta), 3px 0 0 0 var(--tinta); }
+  .ways span.on { background: var(--lemon); }
+
+  /* Menu aplikasi yang turun dari ikon pet */
+  .menu { position: absolute; width: 470px; padding: 10px 0; font-size: 22px; opacity: 0; z-index: 9; }
+  .menu .it { padding: 7px 26px; display: flex; gap: 14px; align-items: center; white-space: nowrap; }
+  .menu .it.hi { background: var(--langit); }
+  .menu .it .ck { width: 18px; color: var(--tinta); }
+  .menu .sep { height: 3px; background: var(--langit-tua); margin: 8px 0; }
+  .menu .dim { color: var(--tinta-2); }
+  .list { position: absolute; width: 880px; }
+  .li { display: flex; gap: 22px; align-items: baseline; padding: 14px 0; font-size: 32px; opacity: 0; }
+  .li b { width: 18px; height: 18px; background: var(--stroberi); flex: none; transform: translateY(-4px); }
+
+  .badge { position: absolute; left: 0; right: 0; margin: 0 auto; width: fit-content; padding: 16px 34px; font-size: 40px; }
+  .fade { position: absolute; inset: 0; background: var(--tinta); opacity: 0; pointer-events: none; z-index: 30; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="floor"></div>
+
+  <!-- 1. Pembuka -->
+  <section class="scene" id="s1">
+    <div class="center pixel" id="s1title" style="top:210px; font-size:230px; line-height:1">Temu</div>
+    <div class="center pixel" id="s1tag" style="top:470px; font-size:76px; color:var(--tinta)">A little way to be together.</div>
+    <div class="center" id="s1sub" style="top:600px; font-size:34px; color:var(--tinta-2)">Versi pixel kecil dirimu, hidup di layar Mac orang terdekatmu.</div>
+    <div class="pet" id="s1pet" data-sheet="oren" data-s="5"></div>
+  </section>
+
+  <!-- 2. Hadir di desktop dia -->
+  <section class="scene" id="s2">
+    <div class="eyebrow" id="s2k" style="left:140px; top:230px">01 — Di Mac orang terdekatmu</div>
+    <div class="head" id="s2h" style="left:140px; top:280px">Jauh, tapi<br>tetap di <span class="mark" id="s2m">sebelah</span>.</div>
+    <div class="body" id="s2b" style="left:140px; top:490px; width:640px">Dia jalan-jalan di tepi bawah layar, ketiduran, joget sendiri. Klik untuk mengelus, seret untuk mengangkat.</div>
+    <div class="mac px" id="s2mac" style="left:950px; top:190px">
+      <div class="mbar"><span class="brand pixel">Temu</span><span>Berkas</span><span>Tampilan</span><span class="grow"></span>
+        <span class="slot"><span class="pet" id="s2bar" data-sheet="oren" data-s="1"></span></span><span>Kam 12 Nov 19.42</span></div>
+      <div class="desk" id="s2desk">
+        <div class="win px"><div class="winbar"><i></i><i></i><i></i><b>laporan-final-banget.txt</b></div>
+          <p>Bab 3 belum selesai, tapi tidak apa-apa.<br>Dia ada di bawah, nemenin.</p></div>
+        <div class="dock"></div>
+        <div class="pet" id="s2pet" data-sheet="oren" data-s="4"></div>
+        <div class="tag" id="s2tag"></div>
+        <div class="zz" id="z1" style="font-size:26px">z</div><div class="zz" id="z2" style="font-size:34px">z</div><div class="zz" id="z3" style="font-size:44px">Z</div>
+        <div class="hearts" id="s2hearts"></div>
+        <svg class="cursor" id="s2cur" viewBox="0 0 17 25"><path d="M1 1 L1 20 L6 15.5 L9.5 23 L12.5 21.6 L9 14.3 L15.5 14.3 Z" fill="#2a2140" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. Buat dirimu yang kecil -->
+  <section class="scene" id="s3">
+    <div class="eyebrow" id="s3k" style="left:140px; top:230px">02 — Tiga cara membuat dirimu yang kecil</div>
+    <div class="head" id="s3h" style="left:140px; top:280px">Pilih, gambar,<br>atau dari <span class="mark" id="s3m">fotomu</span>.</div>
+    <div class="body" id="s3b" style="left:140px; top:490px; width:640px">Editor piksel 32×32 untuk 16 pose. Atau unggah foto, dan AI menggambar dirimu versi pixel.</div>
+    <div class="ways" id="s3ways" style="left:140px; top:700px"><span>Pilih bawaan</span><span>Gambar sendiri</span><span>Dari foto</span></div>
+    <div class="editor px" id="s3ed" style="left:880px; top:190px">
+      <div class="bar"><span class="pixel">Sore</span><span id="s3pose">Diam · 32×32</span></div>
+      <div class="canvas" id="s3cv">
+        <div class="paint" id="p1"></div><div class="paint" id="p2"></div>
+        <div class="brush" id="s3brush"></div>
+      </div>
+    </div>
+    <div class="sheet" id="s3sheet" style="left:1400px; top:196px"></div>
+    <div class="center" id="s3cap" style="left:1400px; right:auto; width:414px; top:640px; font-size:24px; font-weight:500; color:var(--tinta-2)">16 pose, satu sprite sheet</div>
+  </section>
+
+  <!-- 4. Teman & sapaan -->
+  <section class="scene" id="s4">
+    <div class="eyebrow" id="s4k" style="left:140px; top:230px">03 — Teman &amp; sapaan</div>
+    <div class="head" id="s4h" style="left:140px; top:280px">Kirim sapaan,<br>dia yang <span class="mark" id="s4m">mengantar</span>.</div>
+    <div class="body" id="s4b" style="left:140px; top:490px; width:640px">Undang lewat tautan. Begitu diizinkan, kamu ikut jalan-jalan di Mac-nya, di samping pet miliknya.</div>
+    <div class="mac px" id="s4mac" style="left:950px; top:190px">
+      <div class="mbar"><span class="brand pixel">Temu</span><span>Berkas</span><span>Tampilan</span><span class="grow"></span>
+        <span class="slot"><span class="pet" id="s4bar" data-sheet="oren" data-s="1"></span></span><span>Kam 12 Nov 19.48</span></div>
+      <div class="desk">
+        <div class="dock"></div>
+        <div class="card px" id="s4card">
+          <h4>Raka ingin ikut tampil di Mac-mu</h4>
+          <p>Kopi, versi kecilnya, akan jalan-jalan di tepi bawah layarmu.</p>
+          <div class="btns"><span class="btn">Nanti</span><span class="btn primary" id="s4ok">Izinkan</span></div>
+        </div>
+        <div class="pet" id="s4mochi" data-sheet="oren" data-s="4"></div>
+        <div class="pet" id="s4kopi" data-sheet="hitam" data-s="4"></div>
+        <div class="bubble px" id="s4bub">Raka: semangat presentasinya <span style="color:var(--stroberi)">♥</span></div>
+        <div class="hearts" id="s4hearts"></div>
+        <svg class="cursor" id="s4cur" viewBox="0 0 17 25"><path d="M1 1 L1 20 L6 15.5 L9.5 23 L12.5 21.6 L9 14.3 L15.5 14.3 Z" fill="#2a2140" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. Hanya kehadiran, bukan pengawasan -->
+  <section class="scene" id="s5">
+    <div class="eyebrow" id="s5k" style="left:140px; top:180px">04 — Cuma mainan</div>
+    <div class="head" id="s5h" style="left:140px; top:230px">Hanya kehadiran,<br>bukan <span class="mark" id="s5m">pengawasan</span>.</div>
+    <div class="list" style="left:140px; top:480px">
+      <div class="li"><b></b><span>Tidak membaca layar, ketikan, atau berkas.</span></div>
+      <div class="li"><b></b><span>Tanpa izin Aksesibilitas atau Perekaman Layar.</span></div>
+      <div class="li"><b></b><span>Foto dihapus begitu pet-nya selesai digambar.</span></div>
+      <div class="li"><b></b><span>Kode sumbernya terbuka di GitHub.</span></div>
+    </div>
+    <div class="menu px" id="s5menu" style="left:1330px; top:60px">
+      <div class="it"><span class="ck"></span><span class="pet" data-sheet="oren" data-s="1.25" style="position:relative; margin:-6px 0"></span>Mochi · Kucing Oren</div>
+      <div class="it"><span class="ck"></span><span class="pet" data-sheet="hitam" data-s="1.25" style="position:relative; margin:-6px 0"></span>Kopi · titipan Raka</div>
+      <div class="sep"></div>
+      <div class="it" id="s5hi"><span class="ck"></span>Beri makan</div>
+      <div class="it"><span class="ck"></span>Ajak main bola</div>
+      <div class="it"><span class="ck"></span>Panggil ke sini</div>
+      <div class="it"><span class="ck">✓</span>Tampil di desktop</div>
+      <div class="sep"></div>
+      <div class="it"><span class="ck"></span>Pengaturan…</div>
+      <div class="it"><span class="ck"></span>Keluar</div>
+    </div>
+    <div id="s5pets"></div>
+  </section>
+
+  <!-- 6. Penutup -->
+  <section class="scene" id="s6">
+    <div class="center pixel" id="s6title" style="top:170px; font-size:200px; line-height:1">Temu</div>
+    <div class="center pixel" id="s6tag" style="top:400px; font-size:68px">A little way to be together.</div>
+    <div class="badge px pixel" id="s6badge" style="top:560px">temu.katili.dev</div>
+    <div class="center" id="s6sub" style="top:690px; font-size:28px; color:var(--tinta-2)">Gratis untuk macOS 13 ke atas · Apple Silicon &amp; Intel</div>
+    <div id="s6pets"></div>
+  </section>
+
+  <!-- Bilah menu global: ikon pet ikut berjalan, seperti di aplikasi -->
+  <div class="menubar">
+    <span class="brand pixel">Temu</span><span>Berkas</span><span>Tampilan</span><span>Pet</span>
+    <span class="grow"></span>
+    <span class="slot" id="mbslot"><span class="pet" id="mbpet" data-sheet="oren" data-s="1.25"></span></span>
+    <span>Kam 12 Nov</span><span>19.42</span>
+  </div>
+
+  <div class="fade" id="fade"></div>
+</div>
+
+<script>
+  // ---- Sprite sheet: 128×128, grid 4×4, pose 32×32 menghadap kanan (sama dengan web/src/lib/sheet.js) ----
+  const SHEETS = '../../server/internal/sprite/templates/';
+  const F = { idle: 0, blink: 1, walk1: 2, walk2: 3, happy: 4, love: 5, surprise: 6, sad: 7, eat: 8, dizzy: 9,
+              sit: 10, sleep: 11, jump: 12, wave: 13, dance1: 14, dance2: 15 };
+  function initPet(el) {
+    const s = +el.dataset.s;
+    el.style.width = el.style.height = 32 * s + 'px';
+    el.style.backgroundImage = `url(${SHEETS}${el.dataset.sheet}.png)`;
+    el.style.backgroundSize = 128 * s + 'px';
+    el.style.display = 'inline-block';
+    el.style.flex = 'none';
+  }
+  /** Tampilkan satu pose. x = kiri, foot = garis kaki (tepi bawah sel); flip = menghadap kiri. */
+  function setPet(el, frame, x, foot, flip = false, lift = 0) {
+    const s = +el.dataset.s, i = typeof frame === 'number' ? frame : F[frame];
+    el.style.backgroundPosition = `${-(i % 4) * 32 * s}px ${-Math.floor(i / 4) * 32 * s}px`;
+    if (x != null) { el.style.left = x + 'px'; el.style.top = (foot - 32 * s - lift) + 'px'; }
+    el.style.transform = flip ? 'scaleX(-1)' : 'none';
+  }
+  const walk = (t) => (Math.floor(t / .17) % 2 ? 'walk2' : 'walk1');
+  const dance = (t) => (Math.floor(t / .24) % 2 ? 'dance2' : 'dance1');
+  const idle = (t, k = 0) => ((t + k) % 2.6 < .15 ? 'blink' : 'idle');
+  const hop = (t, a) => { const x = ((t - a) % .6) / .6; return x < .5 ? 'jump' : 'happy'; };
+  const hopLift = (t, a, h = 24) => { const x = ((t - a) % .6) / .6; return x < .5 ? Math.sin(x * 2 * Math.PI) * h : 0; };
+
+  // hati pixel kecil (7×6)
+  const HEART = '<svg viewBox="0 0 7 6" shape-rendering="crispEdges" style="width:100%;height:100%"><path fill="#ff5a7a" d="M1 0h2v1h1V0h2v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z"/></svg>';
+  function makeHearts(id, n) {
+    $(id).innerHTML = Array.from({ length: n }, () => `<div class="heart">${HEART}</div>`).join('');
+    return [...$(id).children];
+  }
+  // hati naik dari (x, y) mulai detik a
+  function hearts(list, t, a, x, y) {
+    list.forEach((h, i) => {
+      const k = prog(t, a + i * .18, a + i * .18 + 1.1);
+      h.style.opacity = k > 0 && k < 1 ? Math.min(1, (1 - k) * 2.5) : 0;
+      h.style.left = (x + Math.sin(i * 2.3) * 46 + Math.sin(k * 6 + i) * 10) + 'px';
+      h.style.top = (y - easeOut(k) * 120) + 'px';
+      h.style.transform = `scale(${.8 + (i % 3) * .25})`;
+    });
+  }
+  // kursor bergerak dari a→b (detik t0–t1), klik di tc
+  function cursor(el, t, t0, t1, a, b, tc, out) {
+    const k = easeInOut(prog(t, t0, t1));
+    el.style.opacity = Math.min(prog(t, t0 - .2, t0), 1 - prog(t, out, out + .3));
+    el.style.left = lerp(a[0], b[0], k) + 'px';
+    el.style.top = lerp(a[1], b[1], k) + 'px';
+    const c = prog(t, tc, tc + .08) - prog(t, tc + .1, tc + .2);
+    el.style.transform = `scale(${1 - c * .15})`;
+  }
+
+  // ---- Pembantu animasi (sama dengan teaser Our Day) ----
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const prog = (t, a, b) => clamp((t - a) / (b - a));
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  const easeInOut = (x) => (x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const back = (x) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+  const lerp = (a, b, x) => a + (b - a) * x;
+  const $ = (id) => document.getElementById(id);
+  function sceneAlpha(t, a, b, fi = .5, fo = .5) {
+    return Math.min(easeOut(prog(t, a, a + fi)), 1 - easeInOut(prog(t, b - fo, b)));
+  }
+  function show(el, alpha) { el.style.opacity = alpha; el.style.visibility = alpha <= 0.001 ? 'hidden' : 'visible'; }
+  function rise(el, t, start, dur = .7, dist = 40) {
+    const x = easeOut(prog(t, start, start + dur));
+    el.style.opacity = x;
+    el.style.transform = `translateY(${(1 - x) * dist}px)`;
+  }
+  function pop(el, t, start, base = '') {
+    const x = prog(t, start, start + .4);
+    el.style.opacity = clamp(x * 3);
+    el.style.transform = `${base} scale(${x > 0 ? back(x) : 0})`;
+  }
+  // stabilo lemon yang tumbuh dari kiri
+  function marker(el, t, a) {
+    const k = easeInOut(prog(t, a, a + .5)) * 100;
+    el.style.backgroundImage = k > .1 ? `linear-gradient(90deg, var(--lemon) ${k}%, transparent ${k}%)` : 'none';
+  }
+
+  // ---- Susun elemen yang berulang ----
+  document.querySelectorAll('.pet').forEach(initPet);
+  const H2 = makeHearts('s2hearts', 6), H4 = makeHearts('s4hearts', 7);
+  // lembar 16 pose (Sore si rubah)
+  $('s3sheet').innerHTML = Object.keys(F).map(() => '<div class="cell px" style="--px:3px"><div class="pet" data-sheet="rubah" data-s="3"></div></div>').join('');
+  const CELLS = [...$('s3sheet').children];
+  CELLS.forEach((c, i) => { const p = c.firstChild; initPet(p); setPet(p, i); });
+  // lapisan cat di editor: 448px = 32 piksel × 14
+  ['p1', 'p2'].forEach((id) => {
+    const el = $(id);
+    el.style.backgroundImage = `url(${SHEETS}rubah.png)`;
+    el.style.backgroundSize = 128 * 14 + 'px';
+    el.style.backgroundPosition = '0 0';
+  });
+  // pet yang beristirahat di lantai (adegan 5) dan yang berkumpul di penutup (adegan 6)
+  const ALL = ['rubah', 'kelinci', 'oren', 'hitam', 'beruang'];
+  $('s5pets').innerHTML = ALL.map((n) => `<div class="pet" data-sheet="${n}" data-s="4"></div>`).join('');
+  $('s6pets').innerHTML = ALL.map((n) => `<div class="pet" data-sheet="${n}" data-s="5"></div>`).join('');
+  const P5 = [...$('s5pets').children], P6 = [...$('s6pets').children];
+  P5.concat(P6).forEach(initPet);
+
+  const FOOT = 1012;   // garis kaki pet di lantai video
+  const DESK = 518;    // garis kaki pet di layar Mac tiruan (tinggi desk 562 − dock)
+
+  // ---- Linimasa (detik) ----
+  // s1 0–4 · s2 4–10.6 · s3 10.6–16.6 · s4 16.6–22.6 · s5 22.6–26.6 · s6 26.6–akhir
+  const DURATION = 31;
+  const TOTAL = DURATION + 1;
+  window.seek = function (t) {
+    // ikon di menu bar: berjalan di tempat, kadang berkedip
+    setPet($('mbpet'), t % 4 < 3 ? walk(t) : idle(t));
+    setPet($('s2bar'), walk(t)); setPet($('s4bar'), walk(t + .1));
+
+    // 1. Pembuka: Mochi berjalan masuk lalu melompat senang
+    {
+      show($('s1'), sceneAlpha(t, 0, 4, .01, .6));
+      rise($('s1title'), t, .4, .9, 50);
+      rise($('s1tag'), t, 1.0, .8, 30);
+      rise($('s1sub'), t, 1.5, .8, 24);
+      const x = lerp(-180, 880, easeOut(prog(t, .2, 2.4)) * .3 + prog(t, .2, 2.4) * .7);
+      if (t < 2.4) setPet($('s1pet'), walk(t), x, FOOT);
+      else setPet($('s1pet'), t < 2.6 ? 'surprise' : hop(t, 2.6), 880, FOOT, false, t < 2.6 ? 0 : hopLift(t, 2.6, 30));
+    }
+
+    // 2. Di Mac-nya: jalan, ketiduran, dielus, joget
+    {
+      show($('s2'), sceneAlpha(t, 4, 10.6, .5, .6));
+      rise($('s2k'), t, 4.1, .6, 20); rise($('s2h'), t, 4.2, .8, 40); rise($('s2b'), t, 4.5, .8, 30);
+      marker($('s2m'), t, 5.0);
+      rise($('s2mac'), t, 4.2, .8, 60);
+      const pet = $('s2pet'), X = 470;
+      let label = 'jalan-jalan', x = X;
+      if (t < 6.4) { x = lerp(-140, X, prog(t, 4.6, 6.4)); setPet(pet, walk(t), x, DESK); }
+      else if (t < 6.8) { setPet(pet, 'sit', X, DESK); label = 'rebahan'; }
+      else if (t < 7.9) { setPet(pet, 'sleep', X, DESK); label = 'ketiduran'; }
+      else if (t < 8.2) { setPet(pet, 'surprise', X, DESK); label = 'dielus'; }
+      else if (t < 9.0) { setPet(pet, 'love', X, DESK); label = 'dielus'; }
+      else { setPet(pet, dance(t), X, DESK); label = 'joget sendiri'; }
+      const tag = $('s2tag');
+      tag.textContent = label;
+      tag.style.left = (x + 64) + 'px';
+      tag.style.top = (DESK - 128 - 34) + 'px';
+      tag.style.opacity = prog(t, 4.9, 5.2);
+      // zzz saat tidur
+      ['z1', 'z2', 'z3'].forEach((id, i) => {
+        const k = ((t - 6.8 - i * .3) % 1.2) / 1.2;
+        const on = t > 6.8 + i * .3 && t < 7.9;
+        $(id).style.opacity = on ? Math.sin(k * Math.PI) : 0;
+        $(id).style.left = (X + 100 + i * 22 + k * 20) + 'px';
+        $(id).style.top = (DESK - 110 - i * 26 - k * 30) + 'px';
+      });
+      cursor($('s2cur'), t, 7.2, 7.8, [800, 120], [X + 60, DESK - 70], 7.9, 8.7);
+      hearts(H2, t, 8.2, X + 120, DESK - 90);
+    }
+
+    // 3. Editor piksel + 16 pose
+    {
+      show($('s3'), sceneAlpha(t, 10.6, 16.6, .5, .6));
+      rise($('s3k'), t, 10.7, .6, 20); rise($('s3h'), t, 10.8, .8, 40); rise($('s3b'), t, 11.1, .8, 30);
+      marker($('s3m'), t, 11.6);
+      [...$('s3ways').children].forEach((el, i) => {
+        rise(el, t, 11.6 + i * .15, .5, 16);
+        el.classList.toggle('on', i === (t < 13.6 ? 1 : t < 14.6 ? 0 : 2));
+      });
+      rise($('s3ed'), t, 10.9, .8, 60);
+      // "melukis" pose Diam baris demi baris (baris 3–30 berisi gambar)
+      const k = prog(t, 11.5, 13.4), rows = 30 - 2, pos = k * rows;
+      const r = 2 + Math.floor(pos), c = Math.floor((pos % 1) * 32);
+      $('p1').style.clipPath = `inset(0 0 ${(32 - r) * 14}px 0)`;
+      $('p2').style.clipPath = k >= 1 ? 'inset(0)' : `inset(${r * 14}px ${(32 - c) * 14}px ${(31 - r) * 14}px 0)`;
+      const b = $('s3brush');
+      b.style.left = (c * 14) + 'px'; b.style.top = (r * 14) + 'px';
+      b.style.opacity = k > 0 && k < 1 ? 1 : 0;
+      $('s3pose').textContent = k < 1 ? 'Diam · 32×32' : 'Diam · selesai ✓';
+      // 16 pose muncul satu per satu
+      CELLS.forEach((el, i) => pop(el, t, 13.3 + i * .07));
+      rise($('s3cap'), t, 14.6, .6, 16);
+      // pose di lembar ikut hidup sebentar
+      CELLS.forEach((el, i) => {
+        const p = el.firstChild;
+        if (i === 0) setPet(p, idle(t)); else if (i === 2 || i === 3) setPet(p, walk(t) === 'walk1' ? i : 5 - i);
+        else if (i === 14 || i === 15) setPet(p, dance(t) === 'dance1' ? i : 29 - i);
+      });
+    }
+
+    // 4. Undangan → Kopi datang membawa sapaan
+    {
+      show($('s4'), sceneAlpha(t, 16.6, 22.6, .5, .6));
+      rise($('s4k'), t, 16.7, .6, 20); rise($('s4h'), t, 16.8, .8, 40); rise($('s4b'), t, 17.1, .8, 30);
+      marker($('s4m'), t, 17.6);
+      rise($('s4mac'), t, 16.8, .8, 60);
+      const card = $('s4card');
+      const ck = prog(t, 17.4, 17.8), cout = easeInOut(prog(t, 18.6, 18.9));
+      card.style.opacity = clamp(ck * 3) * (1 - cout);
+      card.style.transform = `scale(${(ck > 0 ? back(ck) : 0) * (1 - cout * .1)})`;
+      cursor($('s4cur'), t, 17.7, 18.3, [790, 480], [580, 300], 18.45, 18.9);
+      const ok = prog(t, 18.45, 18.55) - prog(t, 18.6, 18.7);
+      $('s4ok').style.transform = `translateY(${ok * 5}px)`;
+      $('s4ok').style.boxShadow = ok > .5 ? '0 -3px 0 0 var(--tinta), 0 3px 0 0 var(--tinta), -3px 0 0 0 var(--tinta), 3px 0 0 0 var(--tinta)' : '';
+
+      const MX = 560, KX = 380;
+      const m = $('s4mochi'), kp = $('s4kopi');
+      if (t < 20.0) setPet(m, t > 19.6 ? 'surprise' : idle(t, .7), MX, DESK, true);
+      else setPet(m, hop(t, 20.0), MX, DESK, true, hopLift(t, 20.0));
+      if (t < 20.0) setPet(kp, walk(t), lerp(-140, KX, prog(t, 18.8, 20.0)), DESK);
+      else if (t < 21.2) setPet(kp, Math.floor((t - 20) / .3) % 2 ? 'happy' : 'wave', KX, DESK);
+      else setPet(kp, 'love', KX, DESK);
+      const bub = $('s4bub');
+      bub.style.left = (KX - 40) + 'px'; bub.style.top = (DESK - 128 - 50) + 'px';
+      pop(bub, t, 20.1);
+      bub.style.transformOrigin = '30% 100%';
+      hearts(H4, t, 20.5, MX + 30, DESK - 120);
+    }
+
+    // 5. Cuma mainan: menu aplikasi + janji privasi, pet beristirahat di lantai
+    {
+      show($('s5'), sceneAlpha(t, 22.6, 26.6, .5, .6));
+      rise($('s5k'), t, 22.7, .6, 20); rise($('s5h'), t, 22.8, .8, 40);
+      marker($('s5m'), t, 23.3);
+      document.querySelectorAll('.li').forEach((el, i) => rise(el, t, 23.2 + i * .2, .6, 24));
+      const mk = easeOut(prog(t, 23.0, 23.4));
+      $('s5menu').style.opacity = mk;
+      $('s5menu').style.transform = `translateY(${(1 - mk) * -16}px)`;
+      $('s5hi').classList.toggle('hi', t > 24.6 && t < 25.6);
+      P5.forEach((p, i) => {
+        const x = 1080 + i * 150;
+        const pose = i === 1 ? idle(t, 1.1) : i === 3 ? 'sit' : i === 2 && t > 25.3 ? 'eat' : 'sleep';
+        setPet(p, pose, x, FOOT, i % 2 === 1);
+      });
+    }
+
+    // 6. Penutup: semua pet berkumpul dan joget
+    {
+      show($('s6'), sceneAlpha(t, 26.6, TOTAL + 10, .6, .1));
+      $('s6title').style.transform = `scale(${back(prog(t, 26.7, 27.3))})`;
+      $('s6title').style.opacity = prog(t, 26.7, 26.9);
+      rise($('s6tag'), t, 27.1, .8, 30);
+      rise($('s6badge'), t, 27.6, .7, 20);
+      rise($('s6sub'), t, 27.9, .7, 16);
+      P6.forEach((p, i) => {
+        const home = 480 + i * 200, fromLeft = i < 2 || (i === 2);
+        const start = fromLeft ? -200 - (2 - i) * 120 : 2000 + (i - 3) * 120;
+        const k = prog(t, 26.8, 28.6 + i * .08);
+        if (k < 1) setPet(p, walk(t + i * .05), lerp(start, home, k), FOOT, !fromLeft);
+        else if (i === 2) setPet(p, Math.floor((t - 28.6) / .3) % 2 ? 'happy' : 'wave', home, FOOT);
+        else if (t < 29.4 + i * .1) setPet(p, idle(t, i), home, FOOT, i > 2);
+        else setPet(p, dance(t + i * .12), home, FOOT, i > 2);
+      });
+    }
+
+    // Layar meredup di akhir
+    $('fade').style.opacity = easeInOut(prog(t, TOTAL - .6, TOTAL));
+  };
+  window.DURATION = TOTAL;
+
+  // Pratinjau di browser (tanpa ?render)
+  if (!location.search.includes('render')) {
+    const t0 = performance.now();
+    const loop = () => { window.seek(((performance.now() - t0) / 1000) % window.DURATION); requestAnimationFrame(loop); };
+    loop();
+  } else {
+    window.seek(0);
+  }
+</script>
+</body>
+</html>
