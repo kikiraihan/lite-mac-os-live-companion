@@ -1,4 +1,4 @@
-// LiteCompanion — pixel art pet & properti. Semua sprite ditulis sebagai teks (1 karakter = 1 piksel),
+// Temani — pixel art pet & properti. Semua sprite ditulis sebagai teks (1 karakter = 1 piksel),
 // jadi tidak ada file gambar dan installer satu-file tetap bisa membawa semuanya.
 // Pratinjau tanpa Mac: python3 scripts/preview-sprites.py  → docs/sprites.png
 //
@@ -353,9 +353,6 @@ enum PropKind: String {
 
 // MARK: - Pembuat gambar
 
-/// Ukuran kanvas pet dalam piksel
-let petPixels = (w: 20, h: 18)
-
 enum Sprites {
     private static var cache: [String: CGImage] = [:]
     private static let propPalette: [Character: RGB] = {
@@ -430,18 +427,10 @@ enum Sprites {
                        provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
     }
 
-    static func pet(_ pose: Pose, _ face: Face, _ sp: Species, flip: Bool, scale: Int = 1) -> CGImage? {
-        let key = "pet|\(sp.id)|\(pose.rawValue)|\(face.rawValue)|\(flip)|\(scale)"
+    static func prop(_ kind: PropKind) -> CGImage? {
+        let key = "prop|\(kind.rawValue)"
         if let c = cache[key] { return c }
-        let img = image(compose(pose, face, sp), sp.colors, flip: flip, scale: scale)
-        cache[key] = img
-        return img
-    }
-
-    static func prop(_ kind: PropKind, flip: Bool = false, scale: Int = 1) -> CGImage? {
-        let key = "prop|\(kind.rawValue)|\(flip)|\(scale)"
-        if let c = cache[key] { return c }
-        let img = image(grid(kind.art), propPalette, flip: flip, scale: scale)
+        let img = image(grid(kind.art), propPalette)
         cache[key] = img
         return img
     }
@@ -451,12 +440,105 @@ enum Sprites {
         let g = grid(kind.art)
         return (g.first?.count ?? 0, g.count)
     }
+}
 
-    /// Gambar pet untuk NSImage (menu bar, kartu, ikon aplikasi): `points` = ukuran satu piksel art dalam titik
-    static func petImage(_ pose: Pose, _ face: Face, _ sp: Species, flip: Bool = false, points: CGFloat = 1) -> NSImage {
-        let backing = Int(ceil(points * 2)) // cukup tajam untuk layar Retina
-        let size = NSSize(width: CGFloat(petPixels.w) * points, height: CGFloat(petPixels.h) * points)
-        guard let cg = pet(pose, face, sp, flip: flip, scale: backing) else { return NSImage(size: size) }
+// MARK: - Skin (16 pose)
+
+/// Pose dalam sprite sheet 4×4 (kiri→kanan, atas→bawah). Urutannya harus sama dengan server
+/// (server/internal/sprite) dan web (web/src/lib/sheet.js).
+enum Frame: Int, CaseIterable {
+    case idle, blink, walk1, walk2, happy, love, surprise, sad, eat, dizzy, sit, sleep, jump, wave, dance1, dance2
+}
+
+/// Ukuran satu pose dalam piksel
+let cellPixels = 32
+
+/// Tampilan seekor pet: 16 gambar 32×32, menghadap kanan.
+/// Sumbernya pet bawaan (digambar dari teks di atas) atau sheet PNG 128×128 dari akun Temani.
+final class Skin {
+    let frames: [CGImage]
+
+    init?(frames: [CGImage]) {
+        guard frames.count == Frame.allCases.count else { return nil }
+        self.frames = frames
+    }
+
+    func image(_ f: Frame) -> CGImage { frames[f.rawValue] }
+
+    /// (pose, wajah, geser ke atas) untuk tiap Frame — sama dengan FRAMES di scripts/preview-sprites.py
+    private static let recipe: [(Pose, Face, Int)] = [
+        (.stand, .normal, 0), (.stand, .blink, 0), (.walkA, .normal, 0), (.walkB, .normal, 0),
+        (.stand, .happy, 0), (.stand, .love, 0), (.stand, .surprise, 0), (.stand, .sad, 0),
+        (.stand, .munch, 0), (.stand, .dizzy, 0), (.loaf, .normal, 0), (.loaf, .sleep, 0),
+        (.walkA, .happy, 4), (.stand, .happy, 1), (.walkA, .happy, 0), (.walkB, .happy, 2),
+    ]
+    private static var builtinCache: [String: Skin] = [:]
+
+    static func builtin(_ sp: Species) -> Skin {
+        if let s = builtinCache[sp.id] { return s }
+        var out: [CGImage] = []
+        for (pose, face, lift) in recipe {
+            let g = Sprites.compose(pose, face, sp)
+            var cell = [[Character]](repeating: [Character](repeating: ".", count: cellPixels), count: cellPixels)
+            let w = g.first?.count ?? 0
+            let ox = (cellPixels - w) / 2, oy = cellPixels - g.count - lift
+            for (y, row) in g.enumerated() {
+                for (x, c) in row.enumerated() where c != "." {
+                    let ty = oy + y, tx = ox + x
+                    if ty >= 0, ty < cellPixels, tx >= 0, tx < cellPixels { cell[ty][tx] = c }
+                }
+            }
+            if let img = Sprites.image(cell, sp.colors) { out.append(img) }
+        }
+        // gambar bawaan selalu lengkap; kalau tidak, lebih baik berhenti saat pengembangan
+        let skin = Skin(frames: out)!
+        builtinCache[sp.id] = skin
+        return skin
+    }
+
+    /// Sheet PNG 128×128 dari server → 16 pose
+    convenience init?(png: Data) {
+        guard let src = CGImageSourceCreateWithData(png as CFData, nil),
+              let sheet = CGImageSourceCreateImageAtIndex(src, 0, nil),
+              sheet.width == cellPixels * 4, sheet.height == cellPixels * 4 else { return nil }
+        var out: [CGImage] = []
+        for i in 0..<Frame.allCases.count {
+            let r = CGRect(x: (i % 4) * cellPixels, y: (i / 4) * cellPixels, width: cellPixels, height: cellPixels)
+            guard let c = sheet.cropping(to: r) else { return nil }
+            out.append(c)
+        }
+        self.init(frames: out)
+    }
+
+    /// Gambar untuk menu bar: potongan 24×22 piksel di bawah-tengah pose, 1 piksel = 1 titik
+    func barImage(_ f: Frame, flip: Bool) -> NSImage {
+        let w = 24, h = 22, scale = 2
+        let size = NSSize(width: w, height: h)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: w * scale, height: h * scale, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return NSImage(size: size) }
+        ctx.interpolationQuality = .none
+        if flip {
+            ctx.translateBy(x: CGFloat(w * scale), y: 0)
+            ctx.scaleBy(x: -1, y: 1)
+        }
+        // pose 32×32 digambar sehingga 4 kolom kiri-kanan dan 10 baris atas terpotong
+        let s = CGFloat(scale)
+        ctx.draw(image(f), in: CGRect(x: -4 * s, y: 0, width: CGFloat(cellPixels) * s, height: CGFloat(cellPixels) * s))
+        guard let cg = ctx.makeImage() else { return NSImage(size: size) }
+        return NSImage(cgImage: cg, size: size)
+    }
+
+    /// Gambar besar (kartu, ikon aplikasi): `points` = ukuran satu piksel art dalam titik
+    func portrait(_ f: Frame, points: CGFloat) -> NSImage {
+        let px = cellPixels * Int(ceil(points * 2))
+        let size = NSSize(width: CGFloat(cellPixels) * points, height: CGFloat(cellPixels) * points)
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: px, height: px, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return NSImage(size: size) }
+        ctx.interpolationQuality = .none
+        ctx.draw(image(f), in: CGRect(x: 0, y: 0, width: px, height: px))
+        guard let cg = ctx.makeImage() else { return NSImage(size: size) }
         return NSImage(cgImage: cg, size: size)
     }
 }

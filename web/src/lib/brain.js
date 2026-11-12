@@ -1,5 +1,5 @@
 // Otak kecil pet untuk web: jalan-jalan di lantai, rebahan, tidur, joget, bereaksi saat dielus
-// atau diangkat. Versi ringkas dari perilaku aplikasi Mac (Sources/LiteCompanion/Pet.swift).
+// atau diangkat. Versi ringkas dari perilaku aplikasi Mac (Sources/Temani/Pet.swift).
 
 import { CELL, drawFrame } from './sheet.js'
 import { LINES, pick } from './lines.js'

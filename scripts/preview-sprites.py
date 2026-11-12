@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render sprite bawaan dari Sources/LiteCompanion/Sprites.swift (satu-satunya sumber gambar).
+"""Render sprite bawaan dari Sources/Temani/Sprites.swift (satu-satunya sumber gambar).
 
 Hasil:
   server/internal/sprite/templates/<id>.png  sheet 128×128 (4×4 pose, 32×32) untuk server & web
@@ -15,7 +15,7 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = (ROOT / "Sources/LiteCompanion/Sprites.swift").read_text()
+SRC = (ROOT / "Sources/Temani/Sprites.swift").read_text()
 
 ART = {}
 for name, body in re.findall(r'static let (\w+) = """\n(.*?)\n\s*"""', SRC, re.S):
@@ -66,7 +66,7 @@ def compose(pose, face, sp):
     return g
 
 
-# 16 pose sheet → (pose, wajah, geser ke atas) — sama dengan Skin.builtin di Skin.swift
+# 16 pose sheet → (pose, wajah, geser ke atas) — sama dengan Skin.builtin di Sprites.swift
 FRAMES = [
     ("stand", "Normal", 0), ("stand", "Blink", 0), ("walkA", "Normal", 0), ("walkB", "Normal", 0),
     ("stand", "Happy", 0), ("stand", "Love", 0), ("stand", "Surprise", 0), ("stand", "Sad", 0),

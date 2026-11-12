@@ -3,7 +3,7 @@
 //
 // Format sheet: PNG 128×128, grid 4×4, tiap pose 32×32, pet menghadap KANAN, kaki menempel
 // di tepi bawah sel, latar transparan. Urutan pose (kiri→kanan, atas→bawah) ada di Frames —
-// urutan ini juga dipakai aplikasi Mac (Skin.swift) dan web (web/src/lib/sheet.js).
+// urutan ini juga dipakai aplikasi Mac (Sprites.swift) dan web (web/src/lib/sheet.js).
 package sprite
 
 import (
@@ -54,7 +54,7 @@ type Template struct {
 	ID, Title, DefaultName string
 }
 
-// Templates harus sama dengan Art.species di Sources/LiteCompanion/Sprites.swift
+// Templates harus sama dengan Art.species di Sources/Temani/Sprites.swift
 // (PNG-nya dibuat scripts/preview-sprites.py).
 var Templates = []Template{
 	{"oren", "Kucing Oren", "Mochi"},

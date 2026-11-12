@@ -1,0 +1,17 @@
+# nginx host untuk Temani (di belakang Cloudflare). Salin ke /etc/nginx/sites-available/temani,
+# ganti server_name, lalu: ln -s … sites-enabled/ && nginx -t && systemctl reload nginx
+server {
+    listen 80;
+    server_name temani.katili.dev;
+
+    # foto untuk generate maksimal 8 MB, gambar hasil manual 12 MB
+    client_max_body_size 14m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8093;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 60s;
+    }
+}

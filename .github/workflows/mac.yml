@@ -1,0 +1,91 @@
+name: Mac app
+
+# Build Temani.app di mesin macOS GitHub (tidak ada Mac di lingkungan pengembangan agen).
+# Rilis otomatis: naikkan CFBundleShortVersionString di Resources/Info.plist (sama dengan VERSION),
+# lalu merge ke main → tag v<versi> + GitHub Release berisi Temani.zip & install-Temani.zip.
+# "Update sekarang" di aplikasi mengambil Temani.zip dari rilis terbaru.
+on:
+  push:
+    paths:
+      - "Sources/**"
+      - "Resources/**"
+      - "scripts/build.sh"
+      - "scripts/make-installer.sh"
+      - "VERSION"
+      - ".github/workflows/mac.yml"
+  pull_request:
+    paths:
+      - "Sources/**"
+      - "Resources/**"
+      - "scripts/**"
+      - "VERSION"
+      - ".github/workflows/mac.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP: Temani
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # versi rilis = CFBundleShortVersionString di Info.plist → tag v<versi>
+      - name: Baca versi
+        id: ver
+        run: |
+          V=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist)
+          test "$V" = "$(cat VERSION)" || { echo "::error::Info.plist ($V) ≠ VERSION ($(cat VERSION))"; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build Temani.app (universal)
+        run: ARCH=universal ./scripts/build.sh
+
+      - name: Cek bundle
+        run: |
+          codesign -d -r- "build/$APP.app" 2>&1 | grep -q 'designated => identifier "id.local.temani"$'
+          lipo -archs "build/$APP.app/Contents/MacOS/$APP"
+          plutil -lint "build/$APP.app/Contents/Info.plist"
+
+      # aplikasi harus hidup beberapa detik tanpa crash (tanpa layar pun panggungnya tetap dibuat)
+      - name: Uji jalan singkat
+        run: |
+          "build/$APP.app/Contents/MacOS/$APP" &
+          PID=$!
+          sleep 6
+          if kill -0 "$PID" 2>/dev/null; then kill "$PID"; echo "Masih hidup setelah 6 detik — OK"; else echo "::error::Temani keluar sendiri saat dijalankan"; exit 1; fi
+
+      - name: Buat installer & zip
+        run: |
+          ./scripts/make-installer.sh
+          ditto -c -k --keepParent "build/$APP.app" "dist/$APP.zip"
+          (cd dist && zip -q "install-$APP.zip" "install-$APP.command")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Temani
+          path: |
+            dist/Temani.zip
+            dist/install-Temani.zip
+
+      - name: Rilis otomatis (push ke main, versi belum dirilis)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ver.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Temani ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          files: |
+            dist/Temani.zip
+            dist/install-Temani.zip

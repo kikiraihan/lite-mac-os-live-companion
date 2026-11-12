@@ -1,5 +1,5 @@
 // Format sprite sheet pet: PNG 128×128, grid 4×4, tiap pose 32×32, menghadap kanan.
-// Urutan pose harus sama dengan server (internal/sprite) dan aplikasi Mac (Skin.swift).
+// Urutan pose harus sama dengan server (internal/sprite) dan aplikasi Mac (Sprites.swift).
 
 export const CELL = 32
 export const SIZE = 128

@@ -1,0 +1,110 @@
+name: CI
+
+# Server (Go + PostgreSQL), web (Vue), dan image Docker. Aplikasi Mac punya workflow sendiri (mac.yml).
+on:
+  push:
+    branches-ignore: [main] # main lewat deploy.yml (yang memanggil workflow ini)
+    paths:
+      - "server/**"
+      - "web/**"
+      - "Dockerfile"
+      - "docker-compose.yml"
+      - ".github/workflows/ci.yml"
+  pull_request:
+  workflow_dispatch:
+  # Dipanggil deploy.yml supaya deploy hanya jalan kalau CI hijau.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  server:
+    name: Server (Go + PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: gofmt
+        working-directory: server
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "Belum di-gofmt (make fmt):"; echo "$out"; exit 1; fi
+      - name: go vet
+        working-directory: server
+        run: go vet ./...
+      - name: go test (termasuk integrasi PostgreSQL)
+        working-directory: server
+        env:
+          TEMANI_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+        run: go test -count=1 ./...
+      - name: govulncheck
+        working-directory: server
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./... || echo "::warning::govulncheck menemukan kerentanan — cek log"
+
+  sprites:
+    name: Template pet sinkron dengan Sprites.swift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet pillow
+      - name: Render ulang & bandingkan piksel
+        run: |
+          mkdir -p /tmp/before && cp server/internal/sprite/templates/*.png /tmp/before/
+          python3 scripts/preview-sprites.py
+          python3 - <<'EOF'
+          import glob, os, sys
+          from PIL import Image
+          bad = [os.path.basename(f) for f in glob.glob('/tmp/before/*.png')
+                 if list(Image.open(f).convert('RGBA').getdata()) !=
+                    list(Image.open('server/internal/sprite/templates/' + os.path.basename(f)).convert('RGBA').getdata())]
+          if bad:
+              sys.exit(f"Template belum dirender ulang setelah Sprites.swift berubah: {bad}. Jalankan: make sprites")
+          EOF
+
+  web:
+    name: Web (Vue)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: npm ci
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: npm audit (high)
+        working-directory: web
+        run: npm audit --audit-level=high --omit=dev
+      - name: build
+        working-directory: web
+        run: npm run build
+
+  docker:
+    name: Docker image & compose
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t temani:ci .
+      - name: Validasi docker-compose.yml
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
