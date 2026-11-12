@@ -58,7 +58,7 @@ func CheckPassword(hash, pw string) bool {
 
 // dummyHash dipakai saat email tidak terdaftar supaya waktu respons login tidak
 // membocorkan apakah sebuah email punya akun.
-var dummyHash, _ = HashPassword("temani-dummy-password")
+var dummyHash, _ = HashPassword("temu-dummy-password")
 
 func DummyCheck(pw string) { CheckPassword(dummyHash, pw) }
 

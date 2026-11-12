@@ -1,11 +1,12 @@
-// Temani — pet pixel kecil yang hidup di layar Mac (ikon di menu bar + pet di desktop)
+// Temu — a little way to be together.
+// Versi pixel kecil dirimu / pet-mu yang hidup di layar Mac orang terdekat (ikon di menu bar + pet di desktop)
 // Build: ./scripts/build.sh  (butuh Xcode Command Line Tools)
 //
 // Berkas:
 //   Sprites.swift   gambar pet bawaan & properti (teks → piksel), Skin (16 pose)
 //   Pet.swift       panggung desktop: gerak, kejutan, interaksi mouse
 //   Lines.swift     celoteh pet
-//   Client.swift    akun Temani: hubungkan Mac, ambil pet & sapaan teman
+//   Client.swift    akun Temu: hubungkan Mac, ambil pet & sapaan teman
 //   Settings.swift  jendela Pengaturan
 //   main.swift      ikon menu bar, menu, pembaruan, siklus hidup aplikasi
 
@@ -13,14 +14,14 @@ import Cocoa
 import ServiceManagement
 
 let defaults = UserDefaults.standard
-let appDisplayName = "Temani"
+let appDisplayName = "Temu"
 let appRepo = "kikiraihan/lite-mac-os-live-companion"
 let releasesPage = URL(string: "https://github.com/\(appRepo)/releases/latest")!
 
 // MARK: - Update (GitHub Releases, repo publik)
 
 final class Updater: NSObject {
-    let appName = "Temani"
+    let appName = "Temu"
     var lastError: String?
     let menuItem = NSMenuItem(title: "Cek pembaruan…", action: #selector(Updater.checkNow), keyEquivalent: "")
     var latest: (version: String, zip: URL?, page: URL)?
@@ -157,7 +158,7 @@ final class Updater: NSObject {
                     try fm.createDirectory(at: work, withIntermediateDirectories: true)
                     try fm.moveItem(at: tmp, to: zipFile)
                     let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-                    if code != 200 { throw NSError(domain: "Temani", code: code, userInfo: [NSLocalizedDescriptionKey: "Unduhan gagal (\(code))."]) }
+                    if code != 200 { throw NSError(domain: "Temu", code: code, userInfo: [NSLocalizedDescriptionKey: "Unduhan gagal (\(code))."]) }
                     let unzip = Process()
                     unzip.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
                     unzip.arguments = ["-x", "-k", zipFile.path, work.path]
@@ -218,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         Prefs.register()
         stage.applyPrefs() // panggung dibuat sebelum nilai bawaan pengaturan terdaftar
-        statusItem.autosaveName = "Temani" // posisi ikon diingat
+        statusItem.autosaveName = "Temu" // posisi ikon diingat
         menu.delegate = self
         menu.autoenablesItems = false
         statusItem.menu = menu // klik kiri maupun kanan membuka menu yang sama
@@ -262,7 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if barKey != "empty" {
                 barKey = "empty"
                 b.image = Skin.builtin(Prefs.species).barImage(.sleep, flip: false)
-                b.toolTip = account.isLinked ? "Belum ada pet yang tampil di Mac. Atur di web Temani." : appDisplayName
+                b.toolTip = account.isLinked ? "Belum ada pet yang tampil di Mac. Atur di web Temu." : appDisplayName
             }
             return
         }
@@ -379,16 +380,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } catch {
             let a = NSAlert()
             a.messageText = "Gagal mengatur 'Buka saat login'"
-            a.informativeText = "Pastikan Temani.app ada di folder Applications.\n\n\(error.localizedDescription)"
+            a.informativeText = "Pastikan Temu.app ada di folder Applications.\n\n\(error.localizedDescription)"
             a.runModal()
         }
     }
 
-    /// Hapus Temani dari Mac: login item, pengaturan, token akun, lalu .app dipindahkan ke Tong Sampah
+    /// Hapus Temu dari Mac: login item, pengaturan, token akun, lalu .app dipindahkan ke Tong Sampah
     @objc func uninstall() {
         let a = NSAlert()
-        a.messageText = "Uninstall Temani?"
-        a.informativeText = "Temani akan dihapus dari 'Buka saat login', pengaturan dan token akunnya di Mac ini dihapus, lalu Temani.app dipindahkan ke Tong Sampah. Akun dan pet-mu di web tidak tersentuh."
+        a.messageText = "Uninstall Temu?"
+        a.informativeText = "Temu akan dihapus dari 'Buka saat login', pengaturan dan token akunnya di Mac ini dihapus, lalu Temu.app dipindahkan ke Tong Sampah. Akun dan pet-mu di web tidak tersentuh."
         a.alertStyle = .warning
         a.addButton(withTitle: "Uninstall")
         a.addButton(withTitle: "Batal")
@@ -406,8 +407,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if appURL.pathExtension != "app" || (try? FileManager.default.trashItem(at: appURL, resultingItemURL: nil)) == nil {
             // tidak punya izin tulis (mis. dipasang oleh admin lain) → minta pengguna menghapus manual
             let f = NSAlert()
-            f.messageText = "Temani.app tidak bisa dipindahkan otomatis"
-            f.informativeText = "Pengaturan sudah dihapus. Seret Temani.app ke Tong Sampah secara manual."
+            f.messageText = "Temu.app tidak bisa dipindahkan otomatis"
+            f.informativeText = "Pengaturan sudah dihapus. Seret Temu.app ke Tong Sampah secara manual."
             f.runModal()
             NSWorkspace.shared.activateFileViewerSelecting([appURL])
         }

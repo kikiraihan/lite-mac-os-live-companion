@@ -1,4 +1,4 @@
-// Temani — akun: menghubungkan Mac ini ke akun Temani dan mengambil pet yang tampil di Mac.
+// Temu — akun: menghubungkan Mac ini ke akun Temu dan mengambil pet yang tampil di Mac.
 // Aplikasi tidak pernah menyimpan password: token perangkat didapat lewat kode yang disetujui
 // di web, lalu disimpan di Keychain. Token itu hanya bisa membaca daftar pet + sapaan teman.
 
@@ -8,7 +8,7 @@ import Security
 // MARK: - Keychain
 
 enum Keychain {
-    static let service = "id.local.temani"
+    static let service = "id.local.temu"
 
     static func get(_ account: String) -> String? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
@@ -87,7 +87,7 @@ struct RosterEntry {
 
 final class Account {
     static let tokenAccount = "device-token"
-    static let defaultServer = "https://temani.katili.dev"
+    static let defaultServer = "https://temu.katili.dev"
 
     /// Dipanggil di main thread setiap status / daftar pet berubah
     var onChange: (() -> Void)?
@@ -130,7 +130,7 @@ final class Account {
     private var cacheDir: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
-        let dir = base.appendingPathComponent("Temani/sheets", isDirectory: true)
+        let dir = base.appendingPathComponent("Temu/sheets", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }

@@ -1,7 +1,8 @@
-# Desain web Temani
+# Desain web Temu
 
-Subjek: pet pixel kecil yang berjalan di tepi bawah layar Mac. Pembaca: orang yang ingin sesuatu yang lucu
-menemani kerja, lalu mengajak teman. Tugas halaman: membuat pet, berteman, menghubungkan Mac.
+Subjek: versi pixel kecil dirimu yang berjalan di tepi bawah layar Mac orang terdekat ("A little way to be
+together"). Pembaca: pasangan, sahabat, keluarga yang berjauhan dan ingin terasa hadir. Tugas halaman: membuat
+diri kecil / pet, berteman, menghubungkan Mac.
 
 ## Gagasan
 

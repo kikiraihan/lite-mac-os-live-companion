@@ -1,4 +1,4 @@
-// Temani — panggung: jendela transparan selebar layar tempat pet hidup.
+// Temu — panggung: jendela transparan selebar layar tempat pet hidup.
 // Semua yang terjadi di sini hanya mainan: menggambar sprite, membaca posisi kursor
 // (NSEvent.mouseLocation, tanpa izin apa pun), dan menanggapi klik pada pet itu sendiri.
 // Tidak ada akses ke layar, ketikan, berkas, atau aplikasi lain.

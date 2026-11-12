@@ -1,19 +1,19 @@
-# Deploy Temani ke VPS
+# Deploy Temu ke VPS
 
-Server + web berjalan sebagai satu container (`temani-app`) dan satu PostgreSQL (`temani-db`). Hanya
+Server + web berjalan sebagai satu container (`temu-app`) dan satu PostgreSQL (`temu-db`). Hanya
 `127.0.0.1:8093` yang dibuka di host; nginx host + Cloudflare yang menghadap internet.
 
 Kalau VPS-nya sama dengan project lain (katilidev 8082, undangankami 8083, our-life-planner 8090, Racik 8091,
-Pancar 8092): Temani memakai **8093**, folder `/var/www/temani`, project compose `temani` — tidak menyentuh yang lain.
+Pancar 8092): Temu memakai **8093**, folder `/var/www/temu`, project compose `temu` — tidak menyentuh yang lain.
 
 ```
 push ke main
    ▼
 CI (ci.yml): gofmt · vet · test + PostgreSQL · template sinkron · build web · docker build
    ▼ hijau, dan variable DEPLOY_ENABLED = true
-Deploy (deploy.yml): SSH → /var/www/temani/scripts/deploy.sh
+Deploy (deploy.yml): SSH → /var/www/temu/scripts/deploy.sh
    ├─ tolak bila APP_SECRET kosong / bukan 64 hex
-   ├─ backup PostgreSQL → backups/temani-predeploy-<ts>.sql.gz (10 terakhir disimpan)
+   ├─ backup PostgreSQL → backups/temu-predeploy-<ts>.sql.gz (10 terakhir disimpan)
    ├─ git reset --hard origin/main
    ├─ docker compose build → up -d   (migrasi SQL otomatis saat start)
    ├─ health check http://127.0.0.1:8093/api/health
@@ -23,9 +23,9 @@ Deploy (deploy.yml): SSH → /var/www/temani/scripts/deploy.sh
 ## 1. Persiapan sekali di VPS
 
 ```bash
-sudo mkdir -p /var/www/temani && sudo chown $USER /var/www/temani
-git clone https://github.com/kikiraihan/lite-mac-os-live-companion.git /var/www/temani
-cd /var/www/temani && chmod +x scripts/*.sh
+sudo mkdir -p /var/www/temu && sudo chown $USER /var/www/temu
+git clone https://github.com/kikiraihan/lite-mac-os-live-companion.git /var/www/temu
+cd /var/www/temu && chmod +x scripts/*.sh
 
 cp .env.example .env
 openssl rand -hex 32        # → APP_SECRET (simpan salinannya TERPISAH dari backup database)
@@ -46,9 +46,9 @@ Masuk admin di `https://<domain>/admin/login`, lalu:
 ## 2. nginx host + DNS
 
 ```bash
-sudo cp deploy/nginx-temani.conf.example /etc/nginx/sites-available/temani
-sudo nano /etc/nginx/sites-available/temani      # server_name
-sudo ln -s /etc/nginx/sites-available/temani /etc/nginx/sites-enabled/
+sudo cp deploy/nginx-temu.conf.example /etc/nginx/sites-available/temu
+sudo nano /etc/nginx/sites-available/temu      # server_name
+sudo ln -s /etc/nginx/sites-available/temu /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
@@ -61,12 +61,12 @@ Bawaan **mati**. Untuk menyalakan:
 
 1. Di VPS, buat key khusus Actions dan kunci ke skrip gerbang (key ini tidak bisa membuka shell):
    ```bash
-   ssh-keygen -t ed25519 -f ~/.ssh/temani_actions -N '' -C github-actions-temani
-   echo "command=\"/var/www/temani/scripts/ci-deploy-gate.sh\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty $(cat ~/.ssh/temani_actions.pub)" >> ~/.ssh/authorized_keys
+   ssh-keygen -t ed25519 -f ~/.ssh/temu_actions -N '' -C github-actions-temu
+   echo "command=\"/var/www/temu/scripts/ci-deploy-gate.sh\",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty $(cat ~/.ssh/temu_actions.pub)" >> ~/.ssh/authorized_keys
    ```
 2. Repo → Settings → Secrets and variables → Actions:
-   - Secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` (isi `~/.ssh/temani_actions`), opsional `SSH_PORT`,
-     `SSH_KNOWN_HOSTS` (`ssh-keyscan -H <host>`), `APP_DIR` (bawaan `/var/www/temani`).
+   - Secrets: `SSH_HOST`, `SSH_USER`, `SSH_PRIVATE_KEY` (isi `~/.ssh/temu_actions`), opsional `SSH_PORT`,
+     `SSH_KNOWN_HOSTS` (`ssh-keyscan -H <host>`), `APP_DIR` (bawaan `/var/www/temu`).
    - Variables: `DEPLOY_ENABLED` = `true`, opsional `PUBLIC_URL`.
 3. Buat environment `production` (Settings → Environments); boleh diberi persetujuan manual.
 
@@ -90,5 +90,5 @@ Catatan:
 ## 5. Aplikasi Mac
 
 Aplikasi Mac dirilis lewat GitHub Releases (workflow `mac.yml`), bukan lewat VPS. Alamat server bawaannya
-`https://temani.katili.dev` (`Account.defaultServer` di `Sources/Temani/Client.swift`); ganti konstanta itu
+`https://temu.katili.dev` (`Account.defaultServer` di `Sources/Temu/Client.swift`); ganti konstanta itu
 kalau domainmu berbeda, atau minta pengguna mengisinya di Pengaturan → Akun.

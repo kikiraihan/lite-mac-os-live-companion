@@ -256,7 +256,7 @@ async function save() {
 function download() {
   const a = document.createElement('a')
   a.href = sheetToDataURL(sheet)
-  a.download = (form.name || 'pet') + '-temani.png'
+  a.download = (form.name || 'pet') + '-temu.png'
   a.click()
 }
 

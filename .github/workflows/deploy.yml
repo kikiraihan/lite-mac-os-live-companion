@@ -25,9 +25,9 @@ permissions:
   contents: read
 
 # Group sendiri supaya dua deploy
-# Temani tidak jalan bersamaan.
+# Temu tidak jalan bersamaan.
 concurrency:
-  group: deploy-temani-production
+  group: deploy-temu-production
   cancel-in-progress: false
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-      APP_DIR: ${{ secrets.APP_DIR || '/var/www/temani' }}
+      APP_DIR: ${{ secrets.APP_DIR || '/var/www/temu' }}
       DEPLOY_BRANCH: ${{ github.ref_name }}
       SKIP_BACKUP: ${{ inputs.skip_backup && '1' || '0' }}
     steps:
@@ -82,7 +82,7 @@ jobs:
           {
             echo "### Deploy ${{ job.status }}"
             echo "- Commit: \`${{ github.sha }}\`"
-            echo "- Target: ${{ vars.PUBLIC_URL || 'https://temani.katili.dev' }}"
+            echo "- Target: ${{ vars.PUBLIC_URL || 'https://temu.katili.dev' }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Bersihkan kunci SSH

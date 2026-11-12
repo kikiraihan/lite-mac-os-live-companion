@@ -1,23 +1,23 @@
 #!/bin/bash
-# Membuat dist/install-Temani.command: installer satu file
+# Membuat dist/install-Temu.command: installer satu file
 # (source Swift + Info.plist ditanam di dalamnya, compile di Mac pengguna)
 set -e
 cd "$(dirname "$0")/.."
 mkdir -p dist
-OUT="dist/install-Temani.command"
+OUT="dist/install-Temu.command"
 
 {
 cat <<'HEAD'
 #!/bin/bash
 # ============================================================
-#  Installer Temani
-#  Jalankan:  bash install-Temani.command
+#  Installer Temu
+#  Jalankan:  bash install-Temu.command
 #  (compile + pasang ke /Applications + jalankan otomatis)
 # ============================================================
 set -e
 clear
 echo "=========================================="
-echo "   Installer Temani"
+echo "   Installer Temu"
 echo "=========================================="
 
 # 1. Cek versi macOS (butuh 13 Ventura ke atas)
@@ -40,12 +40,12 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
-APP="Temani.app"
+APP="Temu.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 # 4. Source code aplikasi (satu heredoc per file .swift)
 HEAD
-for f in Sources/Temani/*.swift; do
+for f in Sources/Temu/*.swift; do
   echo "cat > $(basename "$f") <<'SWIFT_EOF'"
   cat "$f"
   echo "SWIFT_EOF"
@@ -57,24 +57,24 @@ echo "PLIST"
 cat <<'TAIL'
 
 echo "▶ Compile (± 30 detik)..."
-swiftc -O -swift-version 5 *.swift -o "$APP/Contents/MacOS/Temani"
+swiftc -O -swift-version 5 *.swift -o "$APP/Contents/MacOS/Temu"
 
 echo "▶ Codesign (ad-hoc)..."
-codesign --force --sign - "$APP"
+codesign --force --sign - --identifier id.local.temu "$APP"
 
 # 5. Tutup versi lama (kalau ada), lalu pasang
-pkill -x Temani 2>/dev/null || true
+pkill -x Temu 2>/dev/null || true
 DEST="/Applications"
 if [ ! -w "$DEST" ]; then DEST="$HOME/Applications"; mkdir -p "$DEST"; fi
 rm -rf "$DEST/$APP"
 cp -R "$APP" "$DEST/"
 xattr -cr "$DEST/$APP" 2>/dev/null || true
 
-echo "▶ Menjalankan Temani..."
+echo "▶ Menjalankan Temu..."
 open "$DEST/$APP"
 
 echo ""
-echo "✅ Selesai! Temani terpasang di: $DEST/$APP"
+echo "✅ Selesai! Temu terpasang di: $DEST/$APP"
 echo "   • Lihat ikonnya di menu bar (kanan atas)."
 echo "   • Tahan ⌘ lalu seret ikon ke dekat jam supaya tidak tersembunyi."
 echo "   • Klik ikon pet → Pengaturan… → 'Buka saat login' agar otomatis jalan."

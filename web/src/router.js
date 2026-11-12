@@ -5,7 +5,7 @@ const AppShell = () => import('./components/AppShell.vue')
 const AdminShell = () => import('./components/AdminShell.vue')
 
 const routes = [
-  { path: '/', component: () => import('./views/Landing.vue'), meta: { title: 'Pet pixel di pojok layar Mac-mu' } },
+  { path: '/', component: () => import('./views/Landing.vue'), meta: { title: 'A little way to be together' } },
   { path: '/masuk', component: () => import('./views/Login.vue'), meta: { guest: true, title: 'Masuk' } },
   { path: '/daftar', component: () => import('./views/Register.vue'), meta: { guest: true, title: 'Daftar' } },
   { path: '/undang/:code', component: () => import('./views/Invite.vue'), meta: { title: 'Undangan berteman' } },
@@ -61,5 +61,5 @@ router.beforeEach(async (to) => {
 })
 
 router.afterEach((to) => {
-  document.title = (to.meta.title ? to.meta.title + ' — ' : '') + (to.path.startsWith('/admin') ? 'Admin Temani' : 'Temani')
+  document.title = (to.meta.title ? to.meta.title + ' — ' : '') + (to.path.startsWith('/admin') ? 'Admin Temu' : 'Temu')
 })

@@ -1,8 +1,8 @@
-# nginx host untuk Temani (di belakang Cloudflare). Salin ke /etc/nginx/sites-available/temani,
+# nginx host untuk Temu (di belakang Cloudflare). Salin ke /etc/nginx/sites-available/temu,
 # ganti server_name, lalu: ln -s … sites-enabled/ && nginx -t && systemctl reload nginx
 server {
     listen 80;
-    server_name temani.katili.dev;
+    server_name temu.katili.dev;
 
     # foto untuk generate maksimal 8 MB, gambar hasil manual 12 MB
     client_max_body_size 14m;

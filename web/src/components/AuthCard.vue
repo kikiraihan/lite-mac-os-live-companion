@@ -6,7 +6,7 @@ defineProps({ title: String, pet: { type: String, default: '/api/templates/oren.
 
 <template>
   <div class="auth">
-    <RouterLink to="/" class="brand pixel">Temani</RouterLink>
+    <RouterLink to="/" class="brand pixel">Temu</RouterLink>
     <div class="stage">
       <PetSprite :src="pet" :anim="anim" :scale="3" />
     </div>

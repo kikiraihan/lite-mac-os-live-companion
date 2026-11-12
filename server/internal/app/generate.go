@@ -49,7 +49,7 @@ func (s *Server) guideImage(w http.ResponseWriter, r *http.Request) error {
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	if r.URL.Query().Get("download") != "" {
-		w.Header().Set("Content-Disposition", `attachment; filename="temani-tata-letak.png"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="temu-tata-letak.png"`)
 	}
 	w.Write(g)
 	return nil

@@ -33,9 +33,9 @@ async function revoke(d) {
 
     <section class="px card">
       <ol class="steps">
-        <li><b>Unduh dan pasang Temani untuk Mac.</b>
+        <li><b>Unduh dan pasang Temu untuk Mac.</b>
           <div><a class="btn primary" :href="download" target="_blank" rel="noopener">Unduh untuk Mac</a></div>
-          <p class="small muted">Buka berkas .zip, pindahkan Temani ke folder Applications, lalu buka. macOS 13 ke atas.</p>
+          <p class="small muted">Buka berkas .zip, pindahkan Temu ke folder Applications, lalu buka. macOS 13 ke atas.</p>
         </li>
         <li><b>Klik ikon pet di menu bar, lalu "Hubungkan akun".</b>
           <p class="small muted">Browser terbuka di halaman ini dengan sebuah kode. Kamu tidak perlu mengetik password di aplikasi.</p>

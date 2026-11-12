@@ -1,23 +1,23 @@
-# Temani — stack production & dev. Hanya SATU port dipublish ke host: app di
+# Temu — stack production & dev. Hanya SATU port dipublish ke host: app di
 # 127.0.0.1:${APP_PORT} (default 8093); nginx host / Cloudflare yang menghadap internet.
 #
-# Nama project dikunci supaya nama volume (temani_pgdata) tidak bergantung pada nama folder clone.
-name: temani
+# Nama project dikunci supaya nama volume (temu_pgdata) tidak bergantung pada nama folder clone.
+name: temu
 
 services:
   app:
     build: .
-    container_name: temani-app
+    container_name: temu-app
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgres://temani:${DB_PASSWORD:-temani}@db:5432/temani?sslmode=disable
+      DATABASE_URL: postgres://temu:${DB_PASSWORD:-temu}@db:5432/temu?sslmode=disable
     ports:
       - "127.0.0.1:${APP_PORT:-8093}:8080"
     depends_on:
       db:
         condition: service_healthy
-    networks: [temani-network]
+    networks: [temu-network]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health >/dev/null 2>&1 || exit 1"]
       interval: 10s
@@ -27,27 +27,27 @@ services:
 
   db:
     image: postgres:16-alpine
-    container_name: temani-db
+    container_name: temu-db
     restart: unless-stopped
     environment:
-      POSTGRES_USER: temani
+      POSTGRES_USER: temu
       # Hanya berlaku saat volume pgdata pertama kali dibuat (lihat DEPLOY.md).
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-temani}
-      POSTGRES_DB: temani
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-temu}
+      POSTGRES_DB: temu
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       # Hanya localhost; DB_HOST_PORT kosong = Docker memilih port acak. Tanda `-` tunggal disengaja.
       - "127.0.0.1:${DB_HOST_PORT-}:5432"
-    networks: [temani-network]
+    networks: [temu-network]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U temani -d temani"]
+      test: ["CMD-SHELL", "pg_isready -U temu -d temu"]
       interval: 5s
       timeout: 5s
       retries: 20
 
 networks:
-  temani-network:
+  temu-network:
     driver: bridge
 
 volumes:

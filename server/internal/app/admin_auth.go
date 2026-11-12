@@ -23,8 +23,8 @@ import (
 //     memberi akses ke /api/admin, dan sebaliknya.
 
 const (
-	adminSessionCookie = "temani_admin_session"
-	adminCSRFCookie    = "temani_admin_csrf"
+	adminSessionCookie = "temu_admin_session"
+	adminCSRFCookie    = "temu_admin_csrf"
 )
 
 func (s *Server) adminAuthRoutes(mux *http.ServeMux) {

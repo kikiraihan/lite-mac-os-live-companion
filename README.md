@@ -1,9 +1,14 @@
-# Temani
+# Temu
 
-Pet pixel kecil yang hidup di pojok layar Mac-mu. Dia jalan-jalan di tepi bawah layar, ketiduran, joget
-sendiri, bersin, mengejar kupu-kupu, dan kadang pulang membawa bunga. Ikonnya di menu bar ikut bergerak.
+**A little way to be together.**
 
-Bikin pet-mu sendiri di web, undang teman, lalu titipkan pet ke Mac masing-masing.
+*Temu* — bertemu, terhubung, menghadirkan diri. Temu menaruh versi pixel kecil dirimu (atau pet-mu) di layar
+Mac orang terdekatmu: pasangan, sahabat, keluarga. Dia jalan-jalan di tepi bawah layar, ketiduran, joget
+sendiri, bersin, mengejar kupu-kupu, kadang pulang membawa bunga, dan menyampaikan sapaanmu. Ikonnya di menu
+bar ikut bergerak. Jauh, tapi rasanya tetap di sebelah.
+
+Buat dirimu versi pixel dari foto (atau gambar sendiri), undang dia, dan begitu dia mengizinkan, kamu ikut
+hidup di desktop-nya.
 
 ![Pet bawaan dalam 16 pose](docs/sprites.png)
 
@@ -14,7 +19,7 @@ Bikin pet-mu sendiri di web, undang teman, lalu titipkan pet ke Mac masing-masin
 
 | Bagian | Folder | Teknologi |
 |---|---|---|
-| Aplikasi Mac (menu bar + pet di desktop) | `Sources/Temani/` | Swift + AppKit, tanpa dependensi |
+| Aplikasi Mac (menu bar + pet di desktop) | `Sources/Temu/` | Swift + AppKit, tanpa dependensi |
 | Server (API, admin, worker generate) | `server/` | Go + PostgreSQL |
 | Web pengguna & ruang admin | `web/` | Vue 3 + Vite |
 
@@ -46,13 +51,13 @@ Bikin pet-mu sendiri di web, undang teman, lalu titipkan pet ke Mac masing-masin
 
 ## Pasang aplikasi Mac
 
-1. Unduh `Temani.zip` dari [Releases](../../releases/latest), ekstrak, pindahkan `Temani.app` ke **Applications**.
+1. Unduh `Temu.zip` dari [Releases](../../releases/latest), ekstrak, pindahkan `Temu.app` ke **Applications**.
 2. Sekali saja (aplikasi belum dinotarisasi Apple):
    ```bash
-   xattr -cr /Applications/Temani.app
+   xattr -cr /Applications/Temu.app
    ```
    ```bash
-   open /Applications/Temani.app
+   open /Applications/Temu.app
    ```
 3. Klik ikon pet di menu bar → **Hubungkan akun…** untuk memakai pet buatanmu. Browser terbuka dengan sebuah
    kode; setujui di sana. Password tidak pernah diketik di aplikasi.
@@ -64,7 +69,7 @@ Atau build sendiri:
 ```
 
 ```bash
-cp -R build/Temani.app /Applications/
+cp -R build/Temu.app /Applications/
 ```
 
 Syarat: macOS 13 (Ventura) ke atas, Apple Silicon atau Intel.
@@ -98,7 +103,7 @@ make dev-server
 `make dev-server` memakai `AI_MOCK=1`, jadi generate dari foto bisa dicoba tanpa API key. Untuk mengembangkan
 web dengan hot reload, jalankan `make dev-web` di terminal lain (port 5173, `/api` diteruskan ke :8080).
 
-Aplikasi Mac bawaan menunjuk ke `https://temani.katili.dev`. Untuk server sendiri: Pengaturan → Akun → Alamat server.
+Aplikasi Mac bawaan menunjuk ke `https://temu.katili.dev`. Untuk server sendiri: Pengaturan → Akun → Alamat server.
 
 ## Cara kerja singkat
 
@@ -140,15 +145,15 @@ Merilis aplikasi Mac: naikkan `VERSION` dan `Resources/Info.plist` (aturan di [A
 Ikon pet → **Pengaturan… → Tentang → Uninstall…**. Manual:
 
 ```bash
-pkill -x Temani
+pkill -x Temu
 ```
 
 ```bash
-defaults delete id.local.temani
+defaults delete id.local.temu
 ```
 
 ```bash
-security delete-generic-password -s id.local.temani -a device-token
+security delete-generic-password -s id.local.temu -a device-token
 ```
 
-Lalu seret `Temani.app` ke Tong Sampah.
+Lalu seret `Temu.app` ke Tong Sampah.
