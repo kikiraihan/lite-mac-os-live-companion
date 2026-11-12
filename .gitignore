@@ -1,0 +1,9 @@
+build/
+dist/
+node_modules/
+web/dist/
+.env
+backups/
+.DS_Store
+*.swp
+__pycache__/
