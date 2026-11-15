@@ -1,6 +1,6 @@
 # Video teaser
 
-`web/public/videos/temu-teaser.mp4` — teaser 32 detik, 1920×1080, 30 fps, tanpa suara. Tampil di landing page
+`web/public/videos/temu-teaser.mp4` — teaser 32 detik, 1920×1080, 30 fps, dengan lagu (lihat `src/music.py` di bawah). Tampil di landing page
 (`web/src/views/Landing.vue`, poster `web/public/videos/temu-teaser.jpg`).
 
 | Detik | Adegan |
@@ -17,7 +17,7 @@
 Sumber animasi ada di `src/teaser.html`. Gambar pet diambil langsung dari `server/internal/sprite/templates/*.png`, jadi
 kalau pet bawaan di `Sprites.swift` berubah (`make sprites`), render ulang videonya. Font (Pixelify Sans, Rubik) diambil
 dari Google Fonts, jadi butuh koneksi internet. Buka langsung di browser untuk pratinjau. Untuk membuat MP4
-(butuh Node + Playwright/Chromium + ffmpeg):
+(butuh Node + Playwright/Chromium + ffmpeg, dan python3 + numpy untuk lagunya):
 
 ```bash
 node video/src/render.js
