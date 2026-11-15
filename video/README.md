@@ -28,3 +28,24 @@ Poster (frame penutup):
 ```bash
 ffmpeg -y -ss 30.5 -i web/public/videos/temu-teaser.mp4 -frames:v 1 -vf scale=1280:-1 -q:v 4 web/public/videos/temu-teaser.jpg
 ```
+
+## Versi portrait + lagu
+
+`web/public/videos/temu-teaser-portrait.mp4` — teaser yang sama dalam 1080×1920 (9:16, untuk Reels / TikTok / Shorts /
+Status WhatsApp), 32 detik, 30 fps, **dengan lagu**. Sumbernya `src/teaser-portrait.html` (linimasa sama dengan
+`teaser.html`, tata letak disusun ke bawah; kalau adegan diubah, ubah keduanya).
+
+Lagunya chiptune orisinal 120 BPM di C mayor yang dibuat dari kode (`src/music.py`, butuh `numpy`), jadi bebas
+lisensi. Strukturnya mengikuti video: pembuka arpeggio (0–4 dtk), lagu penuh (4–22), tenang di adegan privasi
+(22–26), penutup yang berakhir di akor C (26–32). Ada efek suara kecil yang pas dengan kejadian di layar: lompat,
+klik kursor, hati, 16 pose muncul, gelembung sapaan.
+
+```bash
+node video/src/render.js portrait
+```
+
+Poster:
+
+```bash
+ffmpeg -y -ss 30.5 -i web/public/videos/temu-teaser-portrait.mp4 -frames:v 1 -vf scale=720:-1 -q:v 4 web/public/videos/temu-teaser-portrait.jpg
+```
