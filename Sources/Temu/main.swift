@@ -16,7 +16,6 @@ import ServiceManagement
 let defaults = UserDefaults.standard
 let appDisplayName = "Temu"
 let appRepo = "kikiraihan/lite-mac-os-live-companion"
-let supportURL = "https://sociabuzz.com/inikikikatili/support" // halaman dukungan (traktir) pembuat Temu
 let releasesPage = URL(string: "https://github.com/\(appRepo)/releases/latest")!
 
 // MARK: - Update (GitHub Releases, repo publik)

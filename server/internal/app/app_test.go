@@ -401,6 +401,21 @@ func TestAdminIsSeparate(t *testing.T) {
 		t.Fatalf("log generate: %v", g)
 	}
 
+	// pengaturan: link dukungan punya bawaan, bisa diganti admin, dan hanya menerima http(s)
+	if c := newClient(t, ts).must(200, "GET", "/api/config", nil); c["support_url"] != "https://sociabuzz.com/inikikikatili/support" ||
+		c["supporters_url"] != "https://sociabuzz.com/inikikikatili/tribe" {
+		t.Fatalf("link dukungan bawaan: %v", c)
+	}
+	adm.must(422, "PUT", "/api/admin/settings", map[string]any{"support_url": "javascript:alert(1)"})
+	adm.must(200, "PUT", "/api/admin/settings", map[string]any{"support_url": "https://contoh.id/traktir", "supporters_url": ""})
+	if c := newClient(t, ts).must(200, "GET", "/api/config", nil); c["support_url"] != "https://contoh.id/traktir" || c["supporters_url"] != "" {
+		t.Fatalf("link dukungan dari admin: %v", c)
+	}
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	if res, err := noFollow.Get(ts.URL + "/dukung"); err != nil || res.StatusCode != 302 || res.Header.Get("Location") != "https://contoh.id/traktir" {
+		t.Fatalf("/dukung harus meneruskan ke link dukungan: %v %v", res, err)
+	}
+
 	// pengaturan: tutup pendaftaran → daftar tanpa undangan ditolak
 	adm.must(200, "PUT", "/api/admin/settings", map[string]any{"registration_open": false, "daily_generations": 5, "max_pets": 3})
 	newClient(t, ts).must(403, "POST", "/api/auth/register", map[string]any{"email": "baru@contoh.id", "name": "Baru", "handle": "baru", "password": "rahasia-banget"})

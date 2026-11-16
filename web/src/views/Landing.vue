@@ -10,7 +10,9 @@ const heroPets = [
   { id: 'kelinci', name: 'Bubu', sheet_url: '/api/templates/kelinci.png' },
   { id: 'hitam', name: 'Kopi', sheet_url: '/api/templates/hitam.png' },
 ]
-const support = 'https://sociabuzz.com/inikikikatili/support' // halaman dukungan (traktir) pembuat Temu
+// halaman dukungan (traktir) pembuat Temu; bisa diganti admin lewat /api/config
+const support = ref('https://sociabuzz.com/inikikikatili/support')
+const supporters = ref('https://sociabuzz.com/inikikikatili/tribe') // daftar pendukung; kosong = disembunyikan
 const download = ref('https://github.com/kikiraihan/lite-mac-os-live-companion/releases/latest')
 const clock = ref('')
 let timer = 0
@@ -20,7 +22,12 @@ const tick = () => {
 onMounted(async () => {
   tick()
   timer = setInterval(tick, 20000)
-  try { download.value = (await api.get('/config')).mac_download_url } catch { /* pakai tautan bawaan */ }
+  try {
+    const c = await api.get('/config')
+    download.value = c.mac_download_url
+    if (c.support_url) support.value = c.support_url
+    supporters.value = c.supporters_url ?? supporters.value
+  } catch { /* pakai tautan bawaan */ }
 })
 onBeforeUnmount(() => clearInterval(timer))
 </script>
@@ -140,7 +147,10 @@ onBeforeUnmount(() => clearInterval(timer))
             menjaga servernya tetap menyala.
           </p>
         </div>
-        <a class="btn sun" :href="support" target="_blank" rel="noopener">Dukung lewat Sociabuzz</a>
+        <div class="cta">
+          <a class="btn sun" :href="support" target="_blank" rel="noopener">Dukung lewat Sociabuzz</a>
+          <a v-if="supporters" class="small muted" :href="supporters" target="_blank" rel="noopener">Lihat para pendukung →</a>
+        </div>
       </div>
     </section>
 
@@ -197,6 +207,7 @@ figcaption { padding: 10px 12px; border-top: 3px solid var(--tinta); }
 .support { display: flex; align-items: center; gap: 24px; padding: 24px 28px; }
 .support h2 { margin-bottom: 6px; }
 .support .btn { white-space: nowrap; }
+.support .cta { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; }
 
 @media (max-width: 860px) {
   .hero, .duo { grid-template-columns: 1fr; gap: 28px; padding-top: 32px; }
@@ -204,6 +215,7 @@ figcaption { padding: 10px 12px; border-top: 3px solid var(--tinta); }
   .ways { grid-template-columns: 1fr; gap: 24px; }
   .desk { height: 260px; }
   .support { flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px; }
+  .support .cta { align-items: flex-start; }
   .foot { flex-wrap: wrap; gap: 8px 16px; }
 }
 </style>

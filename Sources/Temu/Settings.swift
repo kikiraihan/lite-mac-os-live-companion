@@ -466,8 +466,11 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         if let u = URL(string: "https://github.com/\(appRepo)") { NSWorkspace.shared.open(u) }
     }
 
+    /// Halaman dukungan dibuka lewat server Temu (/dukung), yang meneruskan ke link yang diatur admin
     @objc func openSupport() {
-        if let u = URL(string: supportURL) { NSWorkspace.shared.open(u) }
+        if let u = URL(string: app.account.server.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/dukung") {
+            NSWorkspace.shared.open(u)
+        }
     }
 
     /// Nama pet / alamat server disimpan saat selesai diketik
