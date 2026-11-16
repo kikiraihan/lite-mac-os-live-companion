@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -156,7 +157,12 @@ func (s *Server) Routes() http.Handler {
 	})
 	mux.HandleFunc("GET /api/config", func(w http.ResponseWriter, r *http.Request) {
 		st := s.settings(r.Context())
-		httpx.JSON(w, 200, map[string]any{"registration_open": st.RegistrationOpen, "mac_download_url": s.Cfg.MacDownloadURL})
+		httpx.JSON(w, 200, map[string]any{"registration_open": st.RegistrationOpen, "mac_download_url": s.Cfg.MacDownloadURL,
+			"support_url": st.SupportURL, "supporters_url": st.SupportersURL})
+	})
+	// Tombol "Dukung" di aplikasi Mac membuka alamat ini, supaya linknya bisa diganti dari admin tanpa update aplikasi.
+	mux.HandleFunc("GET /dukung", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, s.settings(r.Context()).SupportURL, http.StatusFound)
 	})
 	mux.Handle("/", s.spa())
 	return s.middleware(mux)
@@ -227,10 +233,20 @@ type Settings struct {
 	MaxPets          int `json:"max_pets"`
 	// Prompt: templat prompt generate; kosong = bawaan (sprite.DefaultPrompt).
 	Prompt string `json:"prompt"`
+	// SupportURL: halaman dukungan (traktir) untuk tombol "Dukung"; kosong = bawaan.
+	SupportURL string `json:"support_url"`
+	// SupportersURL: daftar pendukung di bawah tombol landing; kosong = tautannya disembunyikan.
+	SupportersURL string `json:"supporters_url"`
 }
 
+const (
+	defaultSupportURL    = "https://sociabuzz.com/inikikikatili/support"
+	defaultSupportersURL = "https://sociabuzz.com/inikikikatili/tribe"
+)
+
 func defaultSettings() Settings {
-	return Settings{RegistrationOpen: true, DailyGenerations: 3, MaxPets: 12}
+	return Settings{RegistrationOpen: true, DailyGenerations: 3, MaxPets: 12,
+		SupportURL: defaultSupportURL, SupportersURL: defaultSupportersURL}
 }
 
 func (s *Server) settings(ctx context.Context) Settings {
@@ -239,7 +255,24 @@ func (s *Server) settings(ctx context.Context) Settings {
 	if err := s.DB.QueryRowContext(ctx, `SELECT value FROM settings WHERE key='app'`).Scan(&raw); err == nil {
 		json.Unmarshal(raw, &st)
 	}
+	if st.SupportURL == "" {
+		st.SupportURL = defaultSupportURL
+	}
 	return st
+}
+
+// webLink memeriksa link luar yang diisi admin: kosong boleh, selain itu harus http(s) lengkap
+// (supaya tidak ada "javascript:" yang masuk ke href).
+func webLink(raw, name string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" || len(raw) > 500 {
+		return "", httpx.Invalid(name + " harus berupa alamat lengkap yang diawali https://, misalnya https://sociabuzz.com/nama/support.")
+	}
+	return raw, nil
 }
 
 func clean(s string, max int) string {

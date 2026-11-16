@@ -446,7 +446,8 @@ func (s *Server) adminGenerations(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *Server) adminGetSettings(w http.ResponseWriter, r *http.Request) error {
-	httpx.JSON(w, 200, map[string]any{"settings": s.settings(r.Context()), "default_prompt": sprite.DefaultPrompt})
+	httpx.JSON(w, 200, map[string]any{"settings": s.settings(r.Context()), "default_prompt": sprite.DefaultPrompt,
+		"default_support_url": defaultSupportURL, "default_supporters_url": defaultSupportersURL})
 	return nil
 }
 
@@ -465,12 +466,23 @@ func (s *Server) adminPutSettings(w http.ResponseWriter, r *http.Request) error 
 		return httpx.Invalid("Prompt terlalu panjang (maksimal 6000 karakter).")
 	}
 	st.Prompt = strings.TrimSpace(st.Prompt)
+	var err error
+	if st.SupportURL, err = webLink(st.SupportURL, "Link dukungan"); err != nil {
+		return err
+	}
+	if st.SupportURL == "" {
+		st.SupportURL = defaultSupportURL
+	}
+	if st.SupportersURL, err = webLink(st.SupportersURL, "Link daftar pendukung"); err != nil {
+		return err
+	}
 	b, _ := json.Marshal(st)
 	if _, err := s.DB.ExecContext(r.Context(), `INSERT INTO settings(key, value) VALUES('app', $1)
 		ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`, b); err != nil {
 		return err
 	}
-	s.audit(r, "settings.update", "app", map[string]any{"registration_open": st.RegistrationOpen, "daily_generations": st.DailyGenerations, "max_pets": st.MaxPets})
+	s.audit(r, "settings.update", "app", map[string]any{"registration_open": st.RegistrationOpen, "daily_generations": st.DailyGenerations, "max_pets": st.MaxPets,
+		"support_url": st.SupportURL, "supporters_url": st.SupportersURL})
 	httpx.JSON(w, 200, map[string]any{"settings": st})
 	return nil
 }

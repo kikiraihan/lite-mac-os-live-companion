@@ -3,13 +3,16 @@ import { onMounted, reactive, ref } from 'vue'
 import { adminApi } from '../../api.js'
 import { fail, toast } from '../../store.js'
 
-const form = reactive({ registration_open: true, daily_generations: 3, max_pets: 12, prompt: '' })
+const form = reactive({ registration_open: true, daily_generations: 3, max_pets: 12, prompt: '', support_url: '', supporters_url: '' })
 const defaultPrompt = ref(''), loading = ref(true), saving = ref(false)
+const defaults = reactive({ support_url: '', supporters_url: '' }) // link dukungan bawaan dari server
 onMounted(async () => {
   try {
     const d = await adminApi.get('/settings')
     Object.assign(form, d.settings)
     defaultPrompt.value = d.default_prompt
+    defaults.support_url = d.default_support_url
+    defaults.supporters_url = d.default_supporters_url
   } catch (e) { fail(e) }
   loading.value = false
 })
@@ -51,6 +54,19 @@ async function save() {
           cara manual. Tulis <code v-pre>{{note}}</code> di tempat permintaan tambahan pengguna disisipkan. Kosong = prompt bawaan.</p>
         <textarea class="input mono" rows="14" v-model="form.prompt" :placeholder="defaultPrompt" aria-label="Prompt generate"></textarea>
         <div><button type="button" class="link small" @click="form.prompt = defaultPrompt">Isi dengan prompt bawaan untuk diubah</button></div>
+      </section>
+      <section class="stack">
+        <h2>Dukungan</h2>
+        <label class="field"><span>Link dukungan</span>
+          <input class="input" type="url" v-model.trim="form.support_url" :placeholder="defaults.support_url" />
+          <small>Tujuan tombol "Dukung lewat Sociabuzz" di landing, "Dukung Temu" di footer, dan "Buka Sociabuzz…" di aplikasi Mac.
+            Kosong = link bawaan.</small>
+        </label>
+        <label class="field"><span>Link daftar pendukung</span>
+          <input class="input" type="url" v-model.trim="form.supporters_url" placeholder="Kosong = tautan disembunyikan" />
+          <small>Tautan kecil "Lihat para pendukung" di bawah tombol dukungan di landing. Kosongkan untuk menyembunyikannya.</small>
+        </label>
+        <div><button type="button" class="link small" @click="Object.assign(form, defaults)">Kembalikan ke link bawaan</button></div>
       </section>
       <div><button class="btn sun" :disabled="saving">{{ saving ? 'Menyimpan…' : 'Simpan pengaturan' }}</button></div>
     </template>
