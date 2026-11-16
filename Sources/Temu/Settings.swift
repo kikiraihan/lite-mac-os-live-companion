@@ -424,6 +424,10 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                          "Perekaman Layar, atau akses lain. Kode sumbernya terbuka.",
                          Form.button("Lihat kode", self, #selector(openSource))),
             ]),
+            Form.section("Dukung \(appDisplayName)", [
+                Form.row("Traktir pembuatnya", "\(appDisplayName) gratis dan tanpa iklan. Dukungan lewat Sociabuzz membantu biaya server.",
+                         Form.button("Buka Sociabuzz…", self, #selector(openSupport))),
+            ]),
             Form.section("Hapus \(appDisplayName)", [
                 Form.row("Uninstall \(appDisplayName)", "Hapus dari 'Buka saat login', hapus pengaturan & token akun, " +
                          "lalu pindahkan aplikasinya ke Tong Sampah.", uninstall),
@@ -460,6 +464,10 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     }
     @objc func openSource() {
         if let u = URL(string: "https://github.com/\(appRepo)") { NSWorkspace.shared.open(u) }
+    }
+
+    @objc func openSupport() {
+        if let u = URL(string: supportURL) { NSWorkspace.shared.open(u) }
     }
 
     /// Nama pet / alamat server disimpan saat selesai diketik

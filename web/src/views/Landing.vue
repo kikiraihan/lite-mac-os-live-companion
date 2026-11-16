@@ -10,6 +10,7 @@ const heroPets = [
   { id: 'kelinci', name: 'Bubu', sheet_url: '/api/templates/kelinci.png' },
   { id: 'hitam', name: 'Kopi', sheet_url: '/api/templates/hitam.png' },
 ]
+const support = 'https://sociabuzz.com/inikikikatili/support' // halaman dukungan (traktir) pembuat Temu
 const download = ref('https://github.com/kikiraihan/lite-mac-os-live-companion/releases/latest')
 const clock = ref('')
 let timer = 0
@@ -129,9 +130,26 @@ onBeforeUnmount(() => clearInterval(timer))
       </ul>
     </section>
 
+    <section class="band">
+      <div class="px support">
+        <PetSprite src="/api/templates/oren.png" anim="eat" :scale="3" />
+        <div class="grow">
+          <h2>Traktir Mochi makan</h2>
+          <p class="measure">
+            Temu gratis, tanpa iklan, dan kode sumbernya terbuka. Kalau dia bikin harimu lebih hangat, kamu bisa ikut
+            menjaga servernya tetap menyala.
+          </p>
+        </div>
+        <a class="btn sun" :href="support" target="_blank" rel="noopener">Dukung lewat Sociabuzz</a>
+      </div>
+    </section>
+
     <footer class="foot small muted">
       <span>Temu · A little way to be together.</span>
-      <a href="https://github.com/kikiraihan/lite-mac-os-live-companion" target="_blank" rel="noopener">Kode sumber</a>
+      <span class="links">
+        <a :href="support" target="_blank" rel="noopener">Dukung Temu ♥</a>
+        <a href="https://github.com/kikiraihan/lite-mac-os-live-companion" target="_blank" rel="noopener">Kode sumber</a>
+      </span>
     </footer>
   </div>
 </template>
@@ -175,11 +193,17 @@ figcaption { padding: 10px 12px; border-top: 3px solid var(--tinta); }
 .plain li { margin: 6px 0; }
 .plain li::marker { content: '▪  '; color: var(--stroberi); }
 .foot { max-width: 1120px; margin: 24px auto 0; padding: 20px; display: flex; justify-content: space-between; border-top: 3px solid var(--langit-tua); }
+.foot .links { display: flex; gap: 18px; flex-wrap: wrap; }
+.support { display: flex; align-items: center; gap: 24px; padding: 24px 28px; }
+.support h2 { margin-bottom: 6px; }
+.support .btn { white-space: nowrap; }
 
 @media (max-width: 860px) {
   .hero, .duo { grid-template-columns: 1fr; gap: 28px; padding-top: 32px; }
   .pitch h1 { font-size: 38px; }
   .ways { grid-template-columns: 1fr; gap: 24px; }
   .desk { height: 260px; }
+  .support { flex-direction: column; align-items: flex-start; gap: 16px; padding: 20px; }
+  .foot { flex-wrap: wrap; gap: 8px 16px; }
 }
 </style>

@@ -18,6 +18,7 @@ export const ANIMS = {
   happy: [['happy', 380], ['jump', 300]],
   sleep: [['sleep', 1200], ['sit', 120]],
   dance: [['dance1', 240], ['dance2', 240]],
+  eat: [['eat', 520], ['happy', 320]],
   wave: [['wave', 300], ['happy', 300]],
   tour: FRAMES.map((f) => [f, 650]),
 }
