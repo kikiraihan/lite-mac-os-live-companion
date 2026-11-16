@@ -185,6 +185,7 @@ func (s *Server) nudge(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.DB.ExecContext(r.Context(), `INSERT INTO nudges(from_user, to_user, text) VALUES($1,$2,$3)`, me, other, clean(req.Text, 80)); err != nil {
 		return err
 	}
+	s.live.publish(other, map[string]any{"type": "nudge"}) // Mac teman langsung sinkron, tidak menunggu tiap menit
 	httpx.JSON(w, 201, map[string]any{"ok": true})
 	return nil
 }

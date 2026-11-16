@@ -30,6 +30,7 @@ type Server struct {
 	authLimit  *security.Limiter
 	loginLimit *security.Limiter
 	wake       chan struct{} // membangunkan worker generate
+	live       *hub          // saluran real-time ke aplikasi Mac (live.go)
 }
 
 func New(conn *sql.DB, cfg config.Config) *Server {
@@ -40,6 +41,7 @@ func New(conn *sql.DB, cfg config.Config) *Server {
 		authLimit:  security.NewLimiter(20, 10),
 		loginLimit: security.NewLimiter(2, 8),
 		wake:       make(chan struct{}, 1),
+		live:       newHub(),
 	}
 }
 
@@ -143,6 +145,7 @@ func (s *Server) Routes() http.Handler {
 	s.friendRoutes(mux)
 	s.generateRoutes(mux)
 	s.deviceRoutes(mux)
+	s.messageRoutes(mux)
 	s.adminAuthRoutes(mux)
 	s.adminRoutes(mux)
 

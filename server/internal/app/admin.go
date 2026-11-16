@@ -144,6 +144,7 @@ func (s *Server) adminUpdateUser(w http.ResponseWriter, r *http.Request) error {
 	}
 	if req.Disabled { // keluarkan dari semua browser; token Mac ditolak lewat disabled_at
 		s.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id=$1`, id)
+		s.live.dropUser(id) // saluran real-time Mac-nya ikut putus
 	}
 	s.audit(r, "user.update", id, map[string]any{"disabled": req.Disabled})
 	httpx.JSON(w, 200, map[string]any{"ok": true})

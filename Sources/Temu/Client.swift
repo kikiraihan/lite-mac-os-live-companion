@@ -1,6 +1,8 @@
 // Temu — akun: menghubungkan Mac ini ke akun Temu dan mengambil pet yang tampil di Mac.
 // Aplikasi tidak pernah menyimpan password: token perangkat didapat lewat kode yang disetujui
 // di web, lalu disimpan di Keychain. Token itu hanya bisa membaca daftar pet + sapaan teman.
+// Sejak chat: token yang sama juga dipakai untuk pesan ke teman (/api/app/messages/…) dan saluran
+// real-time WebSocket (/api/app/ws) — tetap hanya /api/app/*.
 
 import Cocoa
 import Security
@@ -42,6 +44,8 @@ struct RemotePet: Codable {
     let owner_name: String
     let mine: Bool
     let sheet_url: String
+    /// id pemilik pet (untuk chat); kosong di cache lama sebelum ada chat
+    let owner_id: String?
 }
 
 struct RemoteNudge: Codable {
@@ -59,7 +63,54 @@ struct SyncResponse: Codable {
     let user: RemoteUser
     let pets: [RemotePet]
     let nudges: [RemoteNudge]
+    let unread: [UnreadEntry]?
     let poll_seconds: Int?
+}
+
+/// Pesan belum dibaca dari satu teman
+struct UnreadEntry: Codable {
+    let friend_id: String
+    let friend_name: String
+    let count: Int
+}
+
+/// Satu pesan chat; `mine` = dikirim oleh akun ini (dari Mac mana pun)
+struct ChatMessage: Codable {
+    let id: Int
+    let text: String
+    let created_at: String
+    let mine: Bool
+
+    var date: Date {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: created_at) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: created_at) ?? Date()
+    }
+}
+
+private struct MessagesResponse: Codable {
+    let messages: [ChatMessage]
+    let has_more: Bool
+}
+
+private struct SentResponse: Codable {
+    let message: ChatMessage
+}
+
+private struct ErrorResponse: Codable {
+    struct Body: Codable { let message: String }
+    let error: Body
+}
+
+/// Kabar dari saluran real-time (lihat server/internal/app/live.go)
+private struct LiveEvent: Codable {
+    let type: String
+    let friend_id: String?
+    let friend_name: String?
+    let message: ChatMessage?
+    let unread: [UnreadEntry]?
 }
 
 private struct LinkStart: Codable {
@@ -81,6 +132,8 @@ struct RosterEntry {
     let ownerName: String
     let mine: Bool
     let skin: Skin
+    /// id akun pemilik (kosong untuk pet bawaan); dipakai membuka chat lewat ⌘-klik
+    var ownerID = ""
 }
 
 // MARK: - Akun
@@ -93,6 +146,24 @@ final class Account {
     var onChange: (() -> Void)?
     /// Sapaan dari teman (nama, pesan)
     var onNudge: ((String, String) -> Void)?
+    /// Pesan chat datang lewat saluran real-time (id teman, pesan) — untuk jendela chat yang terbuka
+    var onMessage: ((String, ChatMessage) -> Void)?
+    /// Jumlah belum dibaca berubah; argumen = id teman yang baru saja mengirim pesan (bunyi + balon kata), nil = hanya segarkan
+    var onUnread: ((String?) -> Void)?
+    /// Apakah percakapan dengan teman ini sedang dibaca (jendela chat-nya aktif)
+    var isViewing: ((String) -> Bool)?
+
+    /// Pesan belum dibaca per id teman
+    private(set) var unread: [String: Int] = [:]
+    /// Nama teman yang pernah terlihat (dari pet titipan, kabar pesan, daftar belum dibaca)
+    private(set) var friendNames: [String: String] = [:]
+    var unreadTotal: Int { unread.values.reduce(0, +) }
+    /// Saluran real-time sedang tersambung (kalau tidak, jendela chat menyegarkan sendiri berkala)
+    private(set) var liveConnected = false
+    private var liveTask: URLSessionWebSocketTask?
+    private var livePing: Timer?
+    private var liveRetryTimer: Timer?
+    private var liveRetry: TimeInterval = 2
 
     private(set) var roster: [RosterEntry] = []
     private(set) var statusText = "Belum terhubung ke akun"
@@ -123,6 +194,14 @@ final class Account {
     private lazy var session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 20
+        c.httpCookieStorage = nil
+        return URLSession(configuration: c)
+    }()
+
+    /// Sesi khusus saluran real-time: batas diam lebih panjang dari ping server (25 detik)
+    private lazy var liveSession: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.timeoutIntervalForRequest = 90
         c.httpCookieStorage = nil
         return URLSession(configuration: c)
     }()
@@ -166,11 +245,19 @@ final class Account {
             statusText = userHandle.isEmpty ? "Terhubung" : "Terhubung sebagai @\(userHandle)"
             loadCachedRoster()
             sync(force: true)
+            connectLive()
         }
         let t = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.sync(force: false) }
         t.tolerance = 10
         RunLoop.main.add(t, forMode: .common)
         syncTimer = t
+        // bangun dari tidur: sambungan lama biasanya sudah mati → sambung ulang sekarang
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.isLinked else { return }
+            self.disconnectLive()
+            self.connectLive()
+            self.sync(force: true)
+        }
     }
 
     // MARK: menghubungkan (kode disetujui di web)
@@ -231,6 +318,7 @@ final class Account {
             self.statusText = "Terhubung sebagai @\(r.user?.handle ?? "")"
             self.onChange?()
             self.sync(force: true)
+            self.connectLive()
         }
     }
 
@@ -242,6 +330,10 @@ final class Account {
 
     private func forget(_ status: String) {
         cancelLink()
+        disconnectLive()
+        unread = [:]
+        friendNames = [:]
+        onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
         defaults.removeObject(forKey: "accountHandle")
         defaults.removeObject(forKey: "roster")
@@ -272,6 +364,9 @@ final class Account {
             defaults.set(r.user.handle, forKey: "accountHandle")
             self.statusText = "Terhubung sebagai @\(r.user.handle)"
             if let raw = try? JSONEncoder().encode(r.pets) { defaults.set(raw, forKey: "roster") }
+            for p in r.pets where !p.mine { if let o = p.owner_id { self.friendNames[o] = p.owner_name } }
+            if let u = r.unread { self.applyUnread(u) }
+            if !self.liveConnected { self.connectLive() }
             self.buildRoster(r.pets) {
                 for n in r.nudges { self.onNudge?(n.from_name, n.text) }
             }
@@ -285,7 +380,7 @@ final class Account {
         guard let raw = defaults.data(forKey: "roster"), let pets = try? JSONDecoder().decode([RemotePet].self, from: raw) else { return }
         roster = pets.compactMap { p in
             guard let d = try? Data(contentsOf: sheetFile(p)), let skin = Skin(png: d) else { return nil }
-            return RosterEntry(id: p.id, name: p.name, ownerName: p.owner_name, mine: p.mine, skin: skin)
+            return RosterEntry(id: p.id, name: p.name, ownerName: p.owner_name, mine: p.mine, skin: skin, ownerID: p.owner_id ?? "")
         }
         onChange?()
     }
@@ -314,7 +409,7 @@ final class Account {
         group.notify(queue: .main) { [weak self] in
             guard let self else { return }
             self.roster = pets.compactMap { p in
-                skins[p.id].map { RosterEntry(id: p.id, name: p.name, ownerName: p.owner_name, mine: p.mine, skin: $0) }
+                skins[p.id].map { RosterEntry(id: p.id, name: p.name, ownerName: p.owner_name, mine: p.mine, skin: $0, ownerID: p.owner_id ?? "") }
             }
             self.pruneCache(keep: Set(pets.map { self.sheetFile($0).lastPathComponent }))
             self.onChange?()
@@ -326,6 +421,160 @@ final class Account {
         let fm = FileManager.default
         for f in (try? fm.contentsOfDirectory(atPath: cacheDir.path)) ?? [] where !keep.contains(f) {
             try? fm.removeItem(at: cacheDir.appendingPathComponent(f))
+        }
+    }
+
+    // MARK: pesan (chat)
+
+    /// id teman dari server selalu UUID; selain itu tidak dipakai di path
+    private func safeID(_ id: String) -> String? {
+        id.count == 36 && id.allSatisfy({ $0.isHexDigit || $0 == "-" }) ? id : nil
+    }
+
+    private func errorText(_ data: Data?, _ code: Int) -> String {
+        if let data, let e = try? JSONDecoder().decode(ErrorResponse.self, from: data) { return e.error.message }
+        return code == 0 ? "Server tidak bisa dihubungi. Periksa koneksi internet, lalu coba lagi." : "Gagal (\(code)). Coba lagi sebentar."
+    }
+
+    /// 50 pesan terakhir (lama → baru); `before` = id pesan tertua yang sudah ada, untuk halaman sebelumnya
+    func loadMessages(_ friend: String, before: Int? = nil, _ done: @escaping ([ChatMessage]?, Bool, String?) -> Void) {
+        guard let id = safeID(friend) else { return done(nil, false, "Teman tidak dikenal.") }
+        send(request("/api/app/messages/\(id)" + (before.map { "?before=\($0)" } ?? ""))) { [weak self] data, code in
+            if code == 401 { self?.sync(force: true) }
+            guard code == 200, let data, let r = try? JSONDecoder().decode(MessagesResponse.self, from: data) else {
+                return done(nil, false, self?.errorText(data, code))
+            }
+            done(r.messages, r.has_more, nil)
+        }
+    }
+
+    func sendMessage(_ friend: String, _ text: String, _ done: @escaping (ChatMessage?, String?) -> Void) {
+        guard let id = safeID(friend) else { return done(nil, "Teman tidak dikenal.") }
+        send(request("/api/app/messages/\(id)", method: "POST", body: ["text": text])) { [weak self] data, code in
+            guard code == 201, let data, let r = try? JSONDecoder().decode(SentResponse.self, from: data) else {
+                return done(nil, self?.errorText(data, code))
+            }
+            done(r.message, nil)
+        }
+    }
+
+    /// Tandai percakapan sudah dibaca (indikator di menu bar hilang, juga di Mac lain milik akun ini)
+    func markRead(_ friend: String) {
+        guard let id = safeID(friend) else { return }
+        if unread.removeValue(forKey: friend) != nil { onUnread?(nil) }
+        send(request("/api/app/messages/\(id)/read", method: "POST", body: [:])) { _, _ in }
+    }
+
+    func friendName(_ id: String) -> String { friendNames[id] ?? "Teman" }
+
+    /// Daftar belum dibaca dari server (sync / sambung ulang). Bertambah dibanding sebelumnya = ada pesan baru.
+    private func applyUnread(_ list: [UnreadEntry]) {
+        var fresh: [String: Int] = [:]
+        var newest: String?
+        for e in list {
+            friendNames[e.friend_id] = e.friend_name
+            if isViewing?(e.friend_id) == true { markRead(e.friend_id); continue }
+            fresh[e.friend_id] = e.count
+            if e.count > (unread[e.friend_id] ?? 0), newest == nil { newest = e.friend_id }
+        }
+        let changed = fresh != unread
+        unread = fresh
+        if changed || newest != nil { onUnread?(newest) }
+    }
+
+    // MARK: saluran real-time (WebSocket)
+
+    private func connectLive() {
+        guard isLinked, liveTask == nil, var r = request("/api/app/ws"), let u = r.url,
+              var c = URLComponents(url: u, resolvingAgainstBaseURL: false) else { return }
+        liveRetryTimer?.invalidate()
+        liveRetryTimer = nil
+        c.scheme = c.scheme == "https" ? "wss" : "ws"
+        guard let wsURL = c.url else { return }
+        r.url = wsURL
+        let task = liveSession.webSocketTask(with: r)
+        liveTask = task
+        task.resume()
+        receive(task)
+        let t = Timer(timeInterval: 30, repeats: true) { [weak self, weak task] _ in
+            task?.sendPing { err in
+                if err != nil { DispatchQueue.main.async { if self?.liveTask === task { self?.liveDropped() } } }
+            }
+        }
+        t.tolerance = 5
+        RunLoop.main.add(t, forMode: .common)
+        livePing = t
+    }
+
+    private func disconnectLive() {
+        livePing?.invalidate()
+        livePing = nil
+        liveRetryTimer?.invalidate()
+        liveRetryTimer = nil
+        liveTask?.cancel(with: .goingAway, reason: nil)
+        liveTask = nil
+        liveConnected = false
+        liveRetry = 2
+    }
+
+    private func receive(_ task: URLSessionWebSocketTask) {
+        task.receive { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self, self.liveTask === task else { return }
+                switch result {
+                case .success(.string(let s)):
+                    self.handleLive(Data(s.utf8))
+                    self.receive(task)
+                case .success(.data(let d)):
+                    self.handleLive(d)
+                    self.receive(task)
+                case .success:
+                    self.receive(task)
+                case .failure:
+                    self.liveDropped()
+                }
+            }
+        }
+    }
+
+    /// Sambungan putus: coba lagi dengan jeda yang makin panjang (2 detik … 1 menit)
+    private func liveDropped() {
+        let code = (liveTask?.response as? HTTPURLResponse)?.statusCode ?? 0
+        livePing?.invalidate()
+        livePing = nil
+        liveTask?.cancel()
+        liveTask = nil
+        liveConnected = false
+        guard isLinked else { return }
+        if code == 401 { return sync(force: true) } // token dicabut → sync yang memutuskan akun
+        let wait = liveRetry + Double.random(in: 0...1)
+        liveRetry = min(60, liveRetry * 2)
+        let t = Timer(timeInterval: wait, repeats: false) { [weak self] _ in self?.connectLive() }
+        RunLoop.main.add(t, forMode: .common)
+        liveRetryTimer = t
+    }
+
+    private func handleLive(_ data: Data) {
+        guard let ev = try? JSONDecoder().decode(LiveEvent.self, from: data) else { return }
+        switch ev.type {
+        case "hello":
+            liveConnected = true
+            liveRetry = 2
+            applyUnread(ev.unread ?? [])
+        case "message":
+            guard let friend = ev.friend_id, let m = ev.message else { return }
+            if let n = ev.friend_name, !n.isEmpty { friendNames[friend] = n }
+            onMessage?(friend, m)
+            if !m.mine, isViewing?(friend) != true {
+                unread[friend, default: 0] += 1
+                onUnread?(friend)
+            }
+        case "read":
+            if let friend = ev.friend_id, unread.removeValue(forKey: friend) != nil { onUnread?(nil) }
+        case "nudge":
+            sync(force: true)
+        default:
+            break
         }
     }
 

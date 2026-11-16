@@ -1,6 +1,8 @@
 // Temu — panggung: jendela transparan selebar layar tempat pet hidup.
 // Semua yang terjadi di sini hanya mainan: menggambar sprite, membaca posisi kursor
 // (NSEvent.mouseLocation, tanpa izin apa pun), dan menanggapi klik pada pet itu sendiri.
+// ⌘-klik pet teman membuka jendela chat (tombol ⌘ dibaca dari event klik pada pet itu sendiri,
+// bukan dari keyboard global).
 // Tidak ada akses ke layar, ketikan, berkas, atau aplikasi lain.
 
 import Cocoa
@@ -26,11 +28,20 @@ enum Prefs {
         let n = (defaults.string(forKey: "petName") ?? "").trimmingCharacters(in: .whitespaces)
         return n.isEmpty ? species.defaultName : n
     }
+    /// Bunyi saat pesan chat masuk
+    static var messageSound: Bool { defaults.bool(forKey: "messageSound") }
+    /// Pilihan bunyi bawaan macOS (urutan = tag pop-up di Pengaturan)
+    static let messageSounds = ["Pop", "Tink", "Glass", "Purr", "Ping", "Bottle", "Frog"]
+    static var messageSoundName: String {
+        let i = defaults.integer(forKey: "messageSoundIndex")
+        return messageSounds.indices.contains(i) ? messageSounds[i] : messageSounds[0]
+    }
 
     static func register() {
         defaults.register(defaults: [
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
+            "messageSound": true, "messageSoundIndex": 0,
         ])
     }
 }
@@ -59,6 +70,7 @@ final class Pet {
     let id: String
     var name: String
     var ownerName: String
+    var ownerID: String     // id akun pemilik; untuk chat (⌘-klik)
     var mine: Bool
     var skin: Skin
     let layer = CALayer()
@@ -80,7 +92,7 @@ final class Pet {
     var frame = Frame.idle
 
     init(_ e: RosterEntry) {
-        id = e.id; name = e.name; ownerName = e.ownerName; mine = e.mine; skin = e.skin
+        id = e.id; name = e.name; ownerName = e.ownerName; ownerID = e.ownerID; mine = e.mine; skin = e.skin
         layer.magnificationFilter = .nearest
         layer.minificationFilter = .nearest
         layer.contentsGravity = .resize
@@ -136,7 +148,9 @@ final class StagePanel: NSPanel {
 final class StageView: NSView {
     weak var stage: Stage?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with e: NSEvent) { stage?.mouseDown(convert(e.locationInWindow, from: nil), clicks: e.clickCount) }
+    override func mouseDown(with e: NSEvent) {
+        stage?.mouseDown(convert(e.locationInWindow, from: nil), clicks: e.clickCount, command: e.modifierFlags.contains(.command))
+    }
     override func mouseDragged(with e: NSEvent) { stage?.mouseDragged(convert(e.locationInWindow, from: nil)) }
     override func mouseUp(with e: NSEvent) { stage?.mouseUp(convert(e.locationInWindow, from: nil)) }
     override func rightMouseDown(with e: NSEvent) { stage?.onContextMenu?(e, self) }
@@ -162,6 +176,8 @@ final class Stage: NSObject {
     var onContextMenu: ((NSEvent, NSView) -> Void)?
     /// Dipanggil tiap frame supaya ikon menu bar ikut bergerak
     var onFrame: (() -> Void)?
+    /// ⌘-klik pet teman → buka chat dengan pemiliknya
+    var onChat: ((Pet) -> Void)?
 
     private var s: CGFloat { Prefs.scale }
     private var cell: CGFloat { CGFloat(cellPixels) * s }
@@ -249,7 +265,7 @@ final class Stage: NSObject {
         var keep: [Pet] = []
         for e in entries {
             if let p = pets.first(where: { $0.id == e.id }) {
-                p.name = e.name; p.ownerName = e.ownerName; p.mine = e.mine; p.skin = e.skin
+                p.name = e.name; p.ownerName = e.ownerName; p.ownerID = e.ownerID; p.mine = e.mine; p.skin = e.skin
                 keep.append(p)
             } else {
                 let p = Pet(e)
@@ -334,6 +350,15 @@ final class Stage: NSObject {
             burst(.heart, at: p, count: 3)
         }
         pendingNudges.removeAll()
+    }
+
+    /// Pesan chat baru: pet milik pengirim (kalau tampil) melompat dan memberi tahu, tanpa menampilkan isi pesannya
+    func announceMessage(from ownerID: String, name: String) {
+        guard Prefs.showDesktop, !ownerID.isEmpty,
+              let p = pets.first(where: { !$0.mine && $0.ownerID == ownerID && $0.act != .away && $0.act != .held }) else { return }
+        if p.y == 0 { p.vy = 480; p.start(.jump, 2) }
+        say(p, "Psst, ada pesan dari \(name). ⌘-klik aku untuk membalas.", seconds: 7, force: true)
+        burst(.heart, at: p, count: 2)
     }
 
     private func greet() {
@@ -804,8 +829,19 @@ final class Stage: NSObject {
         return nil
     }
 
-    func mouseDown(_ pt: CGPoint, clicks: Int) {
+    func mouseDown(_ pt: CGPoint, clicks: Int, command: Bool = false) {
         guard let h = hit(pt) else { return }
+        if command, let p = h.0 { // ⌘-klik: chat, hanya untuk pet teman
+            press = nil
+            if !p.mine, !p.ownerID.isEmpty, let onChat {
+                if p.act == .sleep { p.start(.surprise, 1) }
+                burst(.heart, at: p, count: 1)
+                onChat(p)
+            } else {
+                say(p, "Ini aku, pet-mu sendiri. ⌘-klik pet teman untuk kirim pesan.", seconds: 3, force: true)
+            }
+            return
+        }
         press = (h.0, h.1, pt, false)
         if clicks == 2, let p = h.0 { // klik dua kali: lompat + lelucon
             if p.y == 0 { p.vy = 560 }
