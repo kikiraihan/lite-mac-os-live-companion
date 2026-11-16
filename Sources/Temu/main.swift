@@ -6,7 +6,8 @@
 //   Sprites.swift   gambar pet bawaan & properti (teks → piksel), Skin (16 pose)
 //   Pet.swift       panggung desktop: gerak, kejutan, interaksi mouse
 //   Lines.swift     celoteh pet
-//   Client.swift    akun Temu: hubungkan Mac, ambil pet & sapaan teman
+//   Client.swift    akun Temu: hubungkan Mac, ambil pet & sapaan teman, pesan + saluran real-time
+//   Chat.swift      jendela chat dengan teman (⌘-klik pet teman)
 //   Settings.swift  jendela Pengaturan
 //   main.swift      ikon menu bar, menu, pembaruan, siklus hidup aplikasi
 
@@ -215,6 +216,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let menu = NSMenu()
     lazy var settings = SettingsWindow(app: self)
     private var barKey = ""
+    /// Jendela chat yang terbuka, per id teman
+    private var chats: [String: ChatWindow] = [:]
+    private var lastSound = Date.distantPast
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Prefs.register()
@@ -235,6 +239,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.settings.reload()
         }
         account.onNudge = { [weak self] from, text in self?.stage.deliverNudge(from: from, text: text) }
+        stage.onChat = { [weak self] p in self?.openChat(p.ownerID) }
+        account.isViewing = { [weak self] id in self?.chats[id]?.isViewing ?? false }
+        account.onMessage = { [weak self] id, m in self?.chats[id]?.receive(m) }
+        account.onUnread = { [weak self] from in
+            guard let self else { return }
+            self.barKey = ""
+            self.updateBar()
+            if let from { self.newMessage(from) }
+        }
         updater.onChange = { [weak self] in self?.settings.reload() }
 
         refreshRoster()
@@ -245,6 +258,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Pet yang tampil: dari akun kalau terhubung, kalau tidak pet bawaan pilihan di Pengaturan
     func refreshRoster() {
+        if !account.isLinked, !chats.isEmpty { // akun diputus → chat ditutup
+            let open = chats
+            chats = [:]
+            open.values.forEach { $0.close() }
+        }
         if account.isLinked {
             stage.setRoster(account.roster)
         } else {
@@ -257,21 +275,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Ikon menu bar = pet yang sedang beraksi (diperbarui hanya kalau posenya berubah)
+    /// Ada pesan belum dibaca → titik merah kecil di pojok kanan atas ikon.
     func updateBar() {
         guard let b = statusItem.button else { return }
+        let unread = account.unreadTotal
+        let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : ""
         guard let p = stage.barPet else {
-            if barKey != "empty" {
-                barKey = "empty"
-                b.image = Skin.builtin(Prefs.species).barImage(.sleep, flip: false)
-                b.toolTip = account.isLinked ? "Belum ada pet yang tampil di Mac. Atur di web Temu." : appDisplayName
+            if barKey != "empty|\(unread)" {
+                barKey = "empty|\(unread)"
+                b.image = withBadge(Skin.builtin(Prefs.species).barImage(.sleep, flip: false), unread > 0)
+                b.toolTip = (account.isLinked ? "Belum ada pet yang tampil di Mac. Atur di web Temu." : appDisplayName) + note
             }
             return
         }
-        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)"
+        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)|\(unread)"
         guard key != barKey else { return }
         barKey = key
-        b.image = p.skin.barImage(p.frame, flip: p.facing < 0)
-        b.toolTip = stage.describe(p)
+        b.image = withBadge(p.skin.barImage(p.frame, flip: p.facing < 0), unread > 0)
+        b.toolTip = stage.describe(p) + note
+    }
+
+    private func withBadge(_ img: NSImage, _ on: Bool) -> NSImage {
+        guard on else { return img }
+        return NSImage(size: img.size, flipped: false) { rect in
+            img.draw(in: rect)
+            let d: CGFloat = 7
+            NSColor.systemRed.setFill()
+            NSBezierPath(ovalIn: NSRect(x: rect.maxX - d, y: rect.maxY - d, width: d, height: d)).fill()
+            return true
+        }
+    }
+
+    // MARK: chat
+
+    func openChat(_ friendID: String) {
+        guard account.isLinked, !friendID.isEmpty else { return }
+        let c = chats[friendID] ?? ChatWindow(app: self, friendID: friendID)
+        if chats[friendID] == nil {
+            c.onClose = { [weak self] in self?.chats[friendID] = nil }
+            chats[friendID] = c
+        }
+        c.show()
+    }
+
+    @objc func openChatItem(_ it: NSMenuItem) {
+        if let id = it.representedObject as? String { openChat(id) }
+    }
+
+    /// Pesan baru yang belum dibaca: bunyi (kalau dinyalakan) + pet pengirim memberi tahu di desktop
+    private func newMessage(_ from: String) {
+        if Prefs.messageSound, Date().timeIntervalSince(lastSound) > 1.5 {
+            lastSound = Date()
+            NSSound(named: NSSound.Name(Prefs.messageSoundName))?.play()
+        }
+        stage.announceMessage(from: from, name: account.friendName(from))
     }
 
     // MARK: menu
@@ -310,6 +367,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(item("Tampil di desktop", #selector(toggleDesktop), on: Prefs.showDesktop))
         menu.addItem(.separator())
+
+        // pesan: yang belum dibaca dulu, lalu teman yang pet-nya tampil di Mac ini
+        if account.isLinked {
+            var shown = Set<String>()
+            for (id, n) in account.unread.sorted(by: { $0.value > $1.value }).prefix(6) {
+                let it = item("\(account.friendName(id)) — \(n) pesan baru", #selector(openChatItem(_:)))
+                it.representedObject = id
+                it.image = NSImage(systemSymbolName: "bubble.left.fill", accessibilityDescription: "Pesan baru")
+                menu.addItem(it)
+                shown.insert(id)
+            }
+            for p in stage.pets where !p.mine && !p.ownerID.isEmpty && !shown.contains(p.ownerID) && shown.count < 6 {
+                let it = item("Kirim pesan ke \(p.ownerName)…", #selector(openChatItem(_:)))
+                it.representedObject = p.ownerID
+                it.toolTip = "Atau ⌘-klik pet \(p.ownerName) di desktop"
+                menu.addItem(it)
+                shown.insert(p.ownerID)
+            }
+            if !shown.isEmpty { menu.addItem(.separator()) }
+        }
 
         menu.addItem(item(account.statusText, nil))
         if account.isLinked {

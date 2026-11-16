@@ -41,6 +41,9 @@ hidup di desktop-nya.
   contoh tata letak ke ChatGPT, lalu unggah hasilnya. Server memotong, membuang latar, dan merapikannya jadi pixel art.
 - Teman: undang lewat tautan atau nama pengguna. Minta pet teman; setelah diizinkan, pet itu ikut tampil di Mac-mu.
 - Sapa teman: pet di Mac-nya yang menyampaikan pesanmu.
+- Chat dari Mac: **⌘-klik pet teman** di desktop (atau "Kirim pesan ke …" di menu) membuka jendela chat. Pesan
+  sampai real-time lewat WebSocket; ada titik merah di ikon menu bar saat ada pesan belum dibaca, dan bunyi
+  pesan yang bisa diatur / dimatikan di Pengaturan → Umum → Pesan.
 
 **Admin** (`/admin`, akun & sesi terpisah dari pengguna)
 
@@ -112,7 +115,8 @@ Sprites.swift (teks → piksel) ──make sprites──► template PNG server 
 
 web  ──cookie sesi + CSRF──►  /api/…          pengguna
 web  ──cookie admin + CSRF──► /api/admin/…    admin (tabel, sesi, cookie sendiri)
-Mac  ──token perangkat─────►  /api/app/…      daftar pet yang tampil di Mac + sapaan
+Mac  ──token perangkat─────►  /api/app/…      daftar pet yang tampil di Mac + sapaan + pesan
+Mac  ◄──WebSocket (token)───  /api/app/ws     kabar real-time: pesan baru, sudah dibaca, sapaan
 
 foto ─► provider AI (koneksi admin) ─► gambar grid 4×4 ─► sprite.Normalize ─► sheet 128×128 ─► pet
 ```
@@ -124,7 +128,9 @@ melambai, joget 1, joget 2.
 ## Keamanan
 
 - Aplikasi Mac hanya: menggambar sprite di jendela transparan, membaca **posisi** kursor, dan (bila akun
-  terhubung) mengambil gambar pet + sapaan teman dari server. Tidak ada izin sistem yang diminta.
+  terhubung) mengambil gambar pet + sapaan teman dari server, serta mengirim / menerima pesan dengan teman.
+  Tidak ada izin sistem yang diminta (⌘ dibaca dari event klik pada pet itu sendiri, bukan dari keyboard global).
+- Pesan hanya bisa dikirim / dibaca antara dua akun yang berteman; putus teman = tidak bisa mengirim lagi.
 - Token perangkat disimpan di Keychain, hanya berlaku untuk `/api/app/*`, dan bisa dicabut dari web (halaman Mac).
 - Foto untuk generate dihapus dari server begitu prosesnya selesai.
 - Password di-hash argon2id. Sesi admin terpisah, `SameSite=Strict`, maksimal 12 jam, semua tindakannya dicatat.

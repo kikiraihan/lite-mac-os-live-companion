@@ -236,6 +236,20 @@ server {
 	# foto untuk generate maks. 8 MB, gambar hasil manual 12 MB (default nginx 1m → 413)
 	client_max_body_size 14m;
 
+	# saluran real-time aplikasi Mac (chat, WebSocket)
+	location = /api/app/ws {
+		proxy_pass http://127.0.0.1:${TEMU_PORT:-8093};
+		proxy_http_version 1.1;
+		proxy_set_header Upgrade           \$http_upgrade;
+		proxy_set_header Connection        "upgrade";
+		proxy_set_header Host              \$host;
+		proxy_set_header X-Real-IP         \$remote_addr;
+		proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto \$scheme;
+		proxy_read_timeout 1h;
+		proxy_send_timeout 1h;
+	}
+
 	location / {
 		proxy_pass http://127.0.0.1:${TEMU_PORT:-8093};
 		proxy_http_version 1.1;
@@ -254,6 +268,10 @@ sudo nginx -t && sudo systemctl reload nginx
 **`nginx -t` gagal:** hapus symlink yang barusan dibuat (`sudo rm /etc/nginx/sites-enabled/temu.katili.dev`),
 jalankan `sudo nginx -t` lagi sampai kembali normal, lalu laporkan. Jangan reload dalam keadaan gagal.
 Peringatan `conflicting server name "temu.katili.dev"` → sudah ada blok lain untuk domain ini: STOP dan laporkan.
+
+**Server block lama (sebelum ada chat):** tambahkan blok `location = /api/app/ws { … }` di atas ke file site Temu —
+di blok 80 **dan** blok 443 hasil certbot — lalu `sudo nginx -t && sudo systemctl reload nginx`. Tanpa blok itu
+chat tetap jalan, tapi pesan baru baru terlihat saat aplikasi sinkron (tiap menit) atau jendela chat dibuka.
 
 ### 7.2 DNS
 

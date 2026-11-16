@@ -207,12 +207,15 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     private lazy var remindPopup = Form.popup([("Tiap 20 menit", 20), ("Tiap 30 menit", 30), ("Tiap 45 menit", 45), ("Tiap 1 jam", 60),
                                                ("Tiap 2 jam", 120)], self, #selector(intChanged(_:)))
     private lazy var loginSwitch = Form.toggle(self, #selector(loginChanged(_:)))
+    private lazy var soundSwitch = Form.toggle(self, #selector(boolChanged(_:)))
+    private lazy var soundPopup = Form.popup(Prefs.messageSounds.enumerated().map { ($0.element, $0.offset) }, self, #selector(intChanged(_:)))
 
     /// kontrol → kunci UserDefaults
     private lazy var keys: [(NSControl, String)] = [
         (desktopSwitch, "showDesktop"), (sizePopup, "petScale"), (livelyPopup, "liveliness"), (levelPopup, "stageLevel"),
         (bubbleSwitch, "bubbles"), (surpriseSwitch, "surprises"), (cursorSwitch, "followCursor"), (nightSwitch, "sleepAtNight"),
         (remindSwitch, "reminders"), (remindPopup, "reminderMinutes"),
+        (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"),
     ]
 
     // tab Pet & Akun
@@ -290,6 +293,12 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Ingatkan istirahat", "Pet mengingatkan minum air, meregangkan badan, dan mengistirahatkan mata.", remindSwitch),
                 Form.row("Seberapa sering", nil, remindPopup),
             ]),
+            Form.section("Pesan", [
+                Form.row("Suara pesan", "Bunyi pelan saat pesan dari teman masuk. Titik merah di ikon menu bar tetap muncul walau ini dimatikan.", soundSwitch),
+                Form.row("Bunyi", nil, soundPopup),
+                Form.row("Cara mengirim pesan", "⌘-klik pet teman di desktop, atau pilih \"Kirim pesan ke …\" di menu \(appDisplayName). " +
+                         "Hanya untuk pet titipan teman.", nil),
+            ]),
             Form.section("Sistem", [
                 Form.row("Buka saat login", "\(appDisplayName) otomatis berjalan setiap Mac dinyalakan.", loginSwitch),
             ]),
@@ -305,6 +314,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         sizePopup.isEnabled = Prefs.showDesktop
         levelPopup.isEnabled = Prefs.showDesktop
         remindPopup.isEnabled = Prefs.reminders
+        soundPopup.isEnabled = Prefs.messageSound
         loginSwitch.state = SMAppService.mainApp.status == .enabled ? .on : .off
 
         // Pet, Akun & Tentang dibangun ulang hanya kalau isinya berubah
@@ -419,7 +429,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
             ]),
             Form.section("Hanya mainan", [
                 Form.row("Yang dilakukan \(appDisplayName)", "Menggambar pet di layar, membaca posisi kursor, dan (kalau akun terhubung) mengambil " +
-                         "gambar pet serta sapaan teman dari server Temu.", nil),
+                         "gambar pet serta sapaan teman dari server Temu, juga mengirim dan menerima pesan dengan teman.", nil),
                 Form.row("Yang tidak dilakukan", "Tidak membaca layar, ketikan, berkas, atau aplikasi lain. Tidak meminta izin Aksesibilitas, " +
                          "Perekaman Layar, atau akses lain. Kode sumbernya terbuka.",
                          Form.button("Lihat kode", self, #selector(openSource))),
@@ -448,6 +458,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     @objc func intChanged(_ p: NSPopUpButton) {
         guard let k = key(for: p) else { return }
         defaults.set(p.selectedTag(), forKey: k)
+        if p === soundPopup { NSSound(named: NSSound.Name(Prefs.messageSoundName))?.play() } // dengarkan pilihannya
         app.stage.applyPrefs()
         reload()
     }

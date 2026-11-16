@@ -19,6 +19,8 @@ import (
 //  3. aplikasi  POST /api/app/link/poll   → token perangkat (sekali saja), disimpan di Keychain
 //
 // Token perangkat hanya bisa membaca daftar pet yang tampil di Mac & sapaan teman.
+// Sejak chat: token itu juga bisa membaca / mengirim pesan ke teman (messages.go) dan membuka
+// saluran real-time /api/app/ws (live.go). Tetap hanya untuk /api/app/*.
 
 func (s *Server) deviceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/app/link/start", s.wrap(s.limited(s.linkStart)))
@@ -181,6 +183,7 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return httpx.ErrNotFound
 	}
+	s.live.dropDevice(id) // saluran real-time Mac itu ikut putus
 	httpx.JSON(w, 200, map[string]any{"ok": true})
 	return nil
 }
@@ -191,10 +194,10 @@ func (s *Server) deleteDevice(w http.ResponseWriter, r *http.Request) error {
 func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 	p := who(r)
 	rows, err := s.DB.QueryContext(r.Context(), `
-		SELECT p.id, p.name, p.sheet_ver, u.name, true FROM pets p JOIN users u ON u.id=p.owner_id
+		SELECT p.id, p.name, p.sheet_ver, u.name, u.id, true FROM pets p JOIN users u ON u.id=p.owner_id
 			WHERE p.owner_id=$1 AND p.on_mac AND p.hidden_at IS NULL
 		UNION ALL
-		SELECT p.id, p.name, p.sheet_ver, u.name, false FROM pet_shares sh JOIN pets p ON p.id=sh.pet_id JOIN users u ON u.id=p.owner_id
+		SELECT p.id, p.name, p.sheet_ver, u.name, u.id, false FROM pet_shares sh JOIN pets p ON p.id=sh.pet_id JOIN users u ON u.id=p.owner_id
 			WHERE sh.to_user=$1 AND sh.status='approved' AND sh.on_mac AND p.hidden_at IS NULL AND u.disabled_at IS NULL
 		LIMIT 12`, p.UserID)
 	if err != nil {
@@ -203,13 +206,14 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 	defer rows.Close()
 	pets := []map[string]any{}
 	for rows.Next() {
-		var id, name, owner string
+		var id, name, owner, ownerID string
 		var ver int
 		var mine bool
-		if err := rows.Scan(&id, &name, &ver, &owner, &mine); err != nil {
+		if err := rows.Scan(&id, &name, &ver, &owner, &ownerID, &mine); err != nil {
 			return err
 		}
-		pets = append(pets, map[string]any{"id": id, "name": name, "sheet_ver": ver, "owner_name": owner, "mine": mine,
+		// owner_id: dipakai aplikasi untuk membuka chat dengan pemilik pet titipan (⌘-klik)
+		pets = append(pets, map[string]any{"id": id, "name": name, "sheet_ver": ver, "owner_name": owner, "owner_id": ownerID, "mine": mine,
 			"sheet_url": fmt.Sprintf("/api/app/pets/%s/sheet.png?v=%d", id, ver)})
 	}
 	if err := rows.Err(); err != nil {
@@ -231,11 +235,18 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 		}
 		nudges = append(nudges, map[string]any{"id": id, "from_id": from, "from_name": name, "text": text})
 	}
+	if err := nrows.Err(); err != nil {
+		return err
+	}
+	unread, err := s.unreadCounts(r.Context(), p.UserID)
+	if err != nil {
+		return err
+	}
 	httpx.JSON(w, 200, map[string]any{
-		"user": map[string]any{"name": p.Name, "handle": p.Handle}, "pets": pets, "nudges": nudges,
+		"user": map[string]any{"name": p.Name, "handle": p.Handle}, "pets": pets, "nudges": nudges, "unread": unread,
 		"poll_seconds": 60, "web_url": s.Cfg.PublicURL,
 	})
-	return nrows.Err()
+	return nil
 }
 
 func (s *Server) appPetSheet(w http.ResponseWriter, r *http.Request) error {
@@ -258,6 +269,7 @@ func (s *Server) appUnlink(w http.ResponseWriter, r *http.Request) error {
 	if _, err := s.DB.ExecContext(r.Context(), `DELETE FROM devices WHERE id=$1`, who(r).DeviceID); err != nil {
 		return err
 	}
+	s.live.dropDevice(who(r).DeviceID)
 	httpx.JSON(w, 200, map[string]any{"ok": true})
 	return nil
 }

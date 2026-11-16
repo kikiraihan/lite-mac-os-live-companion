@@ -3,6 +3,7 @@ module github.com/kikiraihan/lite-mac-os-live-companion/server
 go 1.24
 
 require (
+	github.com/coder/websocket v1.8.13
 	github.com/jackc/pgx/v5 v5.7.5
 	golang.org/x/crypto v0.40.0
 )
