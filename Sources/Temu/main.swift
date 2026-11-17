@@ -240,16 +240,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     private weak var waitingPet: Pet?
 
     /// Klik kiri ikon menu bar: popover chat. Klik kanan / Control-klik: menu lengkap (native).
-    lazy var popover: NSPopover = {
+    lazy var popover: NSPopover = makePopover(.menuBar)
+    /// Posisi obrolan = di samping pet: popover kedua yang hanya berisi obrolan, menempel di pet.
+    /// Aksi pet, status & tombol lain tetap di popover menu bar.
+    lazy var petPopover: NSPopover = makePopover(.pet)
+
+    private func makePopover(_ place: PopoverView.Place) -> NSPopover {
         let p = NSPopover()
         p.behavior = .transient
         p.animates = true
         p.delegate = self
-        let host = NSHostingController(rootView: PopoverView(model: chat))
+        let host = NSHostingController(rootView: PopoverView(model: chat, place: place))
         host.sizingOptions = .preferredContentSize // tinggi popover mengikuti isi (belum terhubung / chat)
         p.contentViewController = host
         return p
-    }()
+    }
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Prefs.register()
@@ -267,6 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         // aplikasi lain jadi aktif (klik di luar popover) → popover ditutup
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.popover.performClose(nil)
+            self?.petPopover.performClose(nil)
         }
 
         stage.onFrame = { [weak self] in self?.updateBar() }
@@ -306,8 +312,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         updater.start()
         updateBar()
         // --popover: buka popover saat start (dipakai CI untuk tangkapan layar)
+        // --demo-pet: obrolan di samping pet; --demo-pet-menu: popover menu bar saat obrolan ada di samping pet
         if args.contains("--popover") {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.showPopover() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                if args.contains("--demo-pet") { self?.openChatNearPet() } else { self?.showPopover() }
+            }
         }
         // --demo-bubble: balon kata berisi pesan teman (warna teman) untuk tangkapan layar CI
         if args.contains("--demo-bubble") {
@@ -331,41 +340,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         }
     }
 
+    /// Pengaturan › Pesan › Posisi obrolan = di samping pet → pet tempat obrolan menempel (nil = tidak ada yang tampil)
+    private func chatPetTarget() -> Pet? {
+        let args = CommandLine.arguments // --demo-pet / --demo-pet-menu: tangkapan layar CI
+        guard account.isLinked || chat.demo, Prefs.chatNearPet || args.contains("--demo-pet") || args.contains("--demo-pet-menu")
+        else { return nil }
+        return stage.chatPet(for: chat.selected)
+    }
+
+    /// Popover menu bar. Kalau obrolan tinggal di samping pet, isinya baris "Obrolan" (pembuka) + aksi pet + status;
+    /// kalau tidak, obrolan lengkap seperti biasa.
     func showPopover() {
         guard let b = statusItem.button else { return }
-        // Pengaturan › Pesan › Posisi obrolan: di samping pet (--demo-pet: tangkapan layar CI)
-        let nearPet = Prefs.chatNearPet || CommandLine.arguments.contains("--demo-pet")
-        let pet = nearPet ? stage.chatPet(for: chat.selected) : nil
-        // sudah terbuka di tempat lain (mis. di menu bar lalu ⌘-klik pet) → tutup dulu, buka lagi di tempat yang benar
-        if popover.isShown, pet !== waitingPet {
-            popover.close()
-            releasePet() // close() tanpa animasi: pastikan jangkar lama dilepas walau notifikasi tutup tidak datang
-        }
-        chat.opened()
-        if !popover.isShown {
-            if let pet, let host = petAnchor.contentView {
-                let r = stage.screenRect(of: pet)
-                petAnchor.setFrame(r, display: false)
-                petAnchor.orderFrontRegardless()
-                let onRight = r.midX > (petAnchor.screen ?? NSScreen.main)?.frame.midX ?? 0
-                pet.waiting = true
-                pet.facing = onRight ? -1 : 1 // menghadap ke popover
-                waitingPet = pet
-                popover.show(relativeTo: host.bounds, of: host, preferredEdge: onRight ? .minX : .maxX)
-            } else {
-                popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
-            }
-        }
+        closePetChat()
+        let elsewhere = chatPetTarget() != nil
+        chat.chatElsewhere = elsewhere
+        if elsewhere { chat.refresh() } else { chat.opened() }
+        if !popover.isShown { popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY) }
         NSApp.activate(ignoringOtherApps: true)
         popover.contentViewController?.view.window?.makeKey()
     }
 
-    func closePopover() { if popover.isShown { popover.performClose(nil) } }
+    /// Obrolan di samping pet (baris "Obrolan" di popover menu bar, ⌘-klik pet teman, "Kirim pesan ke …").
+    /// Pet tidak tampil di desktop → obrolan lengkap di menu bar.
+    func openChatNearPet() {
+        guard let pet = chatPetTarget(), let host = petAnchor.contentView else {
+            chat.chatElsewhere = false
+            return showPopover()
+        }
+        if popover.isShown {
+            popover.close()
+            popoverClosed(popover) // close() tanpa animasi: rapikan sendiri walau notifikasi tutup tidak datang
+        }
+        if petPopover.isShown, pet !== waitingPet { closePetChat() }
+        chat.reveal() // dibuka atas permintaan: obrolan langsung terlihat walau "Sembunyikan obrolan" nyala
+        chat.opened()
+        if !petPopover.isShown {
+            let r = stage.screenRect(of: pet)
+            petAnchor.setFrame(r, display: false)
+            petAnchor.orderFrontRegardless()
+            let onRight = r.midX > (petAnchor.screen ?? NSScreen.main)?.frame.midX ?? 0
+            pet.waiting = true
+            pet.facing = onRight ? -1 : 1 // menghadap ke popover
+            waitingPet = pet
+            petPopover.show(relativeTo: host.bounds, of: host, preferredEdge: onRight ? .minX : .maxX)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        petPopover.contentViewController?.view.window?.makeKey()
+    }
+
+    private func closePetChat() {
+        guard petPopover.isShown else { return }
+        petPopover.close()
+        popoverClosed(petPopover)
+    }
+
+    func closePopover() {
+        if popover.isShown { popover.performClose(nil) }
+        if petPopover.isShown { petPopover.performClose(nil) }
+    }
 
     func popoverDidClose(_ n: Notification) {
-        popoverLastClose = Date()
-        chat.closed()
-        releasePet()
+        if let p = n.object as? NSPopover { popoverClosed(p) }
+    }
+
+    /// Boleh terpanggil dua kali (notifikasi + penutupan manual)
+    private func popoverClosed(_ p: NSPopover) {
+        guard !p.isShown else { return } // notifikasi terlambat setelah popover yang sama dibuka lagi → abaikan
+        if p === petPopover {
+            if !(popover.isShown && !chat.chatElsewhere) { chat.closed() }
+            releasePet()
+        } else {
+            popoverLastClose = Date()
+            // obrolan ada di samping pet → popover menu bar tidak memegangnya
+            if !chat.chatElsewhere, !petPopover.isShown { chat.closed() }
+        }
     }
 
     /// Pet yang menunggu boleh bergerak lagi; jangkar popover disingkirkan
@@ -473,7 +522,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         chat.refresh()
         chat.select(friendID)
         chat.reveal() // diminta langsung: obrolan terbuka walau "Sembunyikan obrolan" nyala
-        showPopover()
+        if chatPetTarget() != nil { openChatNearPet() } else { showPopover() }
     }
 
     @objc func openChatItem(_ it: NSMenuItem) {

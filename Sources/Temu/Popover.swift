@@ -48,6 +48,8 @@ final class PopoverModel: ObservableObject {
     @Published private(set) var revision = 0
     /// Naik setiap popover dibuka → kolom tulis difokuskan
     @Published private(set) var focusToken = 0
+    /// Obrolan tinggal di popover samping pet → popover menu bar hanya menampilkan baris pembuka "Obrolan"
+    @Published var chatElsewhere = false
     /// Obrolan terlihat. Kalau "Sembunyikan obrolan" nyala, popover dibuka tertutup sampai baris "Obrolan" diklik.
     @Published private(set) var expanded = true
 
@@ -417,7 +419,11 @@ struct PrimaryButton: View {
 // MARK: - Popover
 
 struct PopoverView: View {
+    /// menuBar = popover ikon menu bar (lengkap); pet = popover di samping pet (hanya obrolan)
+    enum Place { case menuBar, pet }
+
     @ObservedObject var model: PopoverModel
+    var place: Place = .menuBar
     @FocusState private var focused: Bool
     @State private var showEmoji = CommandLine.arguments.contains("--demo-emoji") // --demo-emoji: tangkapan layar CI
 
@@ -438,6 +444,8 @@ struct PopoverView: View {
         VStack(spacing: 0) {
             if !model.linked {
                 notLinked
+            } else if place == .menuBar && model.chatElsewhere {
+                chatLauncher
             } else if model.friends.isEmpty {
                 noFriends
             } else if !model.expanded {
@@ -452,10 +460,13 @@ struct PopoverView: View {
                 Divider()
                 chat
             }
-            Divider()
-            petActions
-            Divider()
-            footer
+            // popover di samping pet hanya berisi obrolan; aksi pet & status tetap di popover menu bar
+            if place == .menuBar {
+                Divider()
+                petActions
+                Divider()
+                footer
+            }
         }
         .frame(width: 360)
         .onChange(of: model.focusToken) { _ in
@@ -539,6 +550,41 @@ struct PopoverView: View {
         .buttonStyle(.plain)
         .help(open ? "Sembunyikan obrolan lagi" :
               (n > 0 ? "\(n) pesan baru. " : "") + "Obrolan disembunyikan supaya tidak terbaca orang lain. Atur di Pengaturan › Pesan.")
+    }
+
+    /// Popover menu bar saat Posisi obrolan = di samping pet: satu baris untuk membuka obrolan di sebelah pet
+    private var chatLauncher: some View {
+        let n = model.totalUnread
+        return Button { model.app?.openChatNearPet() } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Brand.strawberry)
+                Text("Obrolan")
+                    .font(.system(size: 13, weight: .semibold))
+                if n > 0 {
+                    Text("\(min(n, 99))")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .frame(minWidth: 17, minHeight: 17)
+                        .background(Capsule().fill(Color.red))
+                }
+                Spacer(minLength: 4)
+                Text("Buka di samping pet")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 12)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help((n > 0 ? "\(n) pesan baru. " : "") + "Obrolan muncul di sebelah pet di desktop. Atur di Pengaturan › Pesan › Posisi obrolan.")
     }
 
     private func friendHelp(_ f: ChatFriend) -> String {
