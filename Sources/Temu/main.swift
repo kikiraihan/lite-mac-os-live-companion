@@ -291,6 +291,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         if args.contains("--popover") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.showPopover() }
         }
+        // --demo-bubble: balon kata berisi pesan teman (warna teman) untuk tangkapan layar CI
+        if args.contains("--demo-bubble") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+                guard let self, let p = self.stage.barPet else { return }
+                self.stage.say(p, "Nanti malam jadi video call? 💛", seconds: 30, force: true, from: "Kiya")
+            }
+        }
     }
 
     // MARK: popover
@@ -399,7 +406,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             lastSound = Date()
             NSSound(named: NSSound.Name(Prefs.messageSoundName))?.play()
         }
-        stage.announceMessage(from: from, name: account.friendName(from))
+        let name = account.friendName(from)
+        guard Prefs.petMessages == 1, stage.hasPet(from) else {
+            _ = account.takeIncoming(from) // tidak dipakai; jangan sampai muncul di kabar berikutnya
+            stage.announceMessage(from: from, name: name)
+            return
+        }
+        // "Tampilkan isi pesan": isi dari saluran real-time; kalau datang lewat sync (tanpa isi), ambil pesan terakhirnya
+        if let text = account.takeIncoming(from) {
+            stage.announceMessage(from: from, name: name, text: text)
+            return
+        }
+        account.loadMessages(from) { [weak self] msgs, _, _ in
+            let text = msgs?.last(where: { !$0.mine })?.text
+            self?.stage.announceMessage(from: from, name: name, text: text)
+        }
     }
 
     // MARK: menu

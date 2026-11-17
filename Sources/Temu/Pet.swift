@@ -38,17 +38,22 @@ enum Prefs {
     }
     /// Privasi: popover membuka dengan obrolan tertutup; isi pesan baru tampil setelah diklik
     static var hideChat: Bool { defaults.bool(forKey: "hideChat") }
+    /// Pesan & sapaan teman di balon kata pet pengirim:
+    /// 0 pet memberi tahu (isi pesan chat tidak tampil), 1 tampilkan isi pesan (balon warna teman), 2 jangan tampilkan balon
+    static var petMessages: Int { min(2, max(0, defaults.integer(forKey: "petMessages"))) }
 
     static func register() {
         defaults.register(defaults: [
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
-            "messageSound": true, "messageSoundIndex": 0, "hideChat": false,
+            "messageSound": true, "messageSoundIndex": 0, "hideChat": false, "petMessages": 0,
         ])
     }
 }
 
 let inkColor = NSColor(srgbRed: 0.165, green: 0.129, blue: 0.251, alpha: 1) // #2a2140, warna garis pixel
+/// #FF5A7A Stroberi (docs/DESIGN.md): balon kata berisi kata-kata teman sendiri, beda dari celoteh pet (putih)
+let strawberryColor = NSColor(srgbRed: 1.0, green: 0.353, blue: 0.478, alpha: 1)
 
 // MARK: - Aktor
 
@@ -346,21 +351,39 @@ final class Stage: NSObject {
         guard !pets.isEmpty else { return }
         for (from, text) in pendingNudges {
             guard let p = pets.first(where: { !$0.mine && $0.ownerName == from }) ?? barPet else { continue }
-            let msg = text.isEmpty ? "\(from) menyapamu!" : "\(from): \(text)"
             if p.y == 0 { p.vy = 520; p.start(.jump, 2) }
-            say(p, msg, seconds: 8, force: true)
+            // kata-kata teman → balon warna teman; sapaan tanpa kata → pet yang memberi tahu
+            if Prefs.petMessages != 2 {
+                if text.isEmpty { say(p, "\(from) menyapamu!", seconds: 8, force: true) }
+                else { say(p, Stage.clip(text), seconds: 8, force: true, from: from) }
+            }
             burst(.heart, at: p, count: 3)
         }
         pendingNudges.removeAll()
     }
 
     /// Pesan chat baru: pet milik pengirim (kalau tampil) melompat dan memberi tahu, tanpa menampilkan isi pesannya
-    func announceMessage(from ownerID: String, name: String) {
+    /// (Pengaturan › Pesan › Pesan di pet teman: beri tahu / tampilkan isi di balon warna teman / tanpa balon)
+    var hasPet: (String) -> Bool { { [weak self] id in self?.pets.contains { !$0.mine && $0.ownerID == id } ?? false } }
+
+    func announceMessage(from ownerID: String, name: String, text: String? = nil) {
         guard Prefs.showDesktop, !ownerID.isEmpty,
               let p = pets.first(where: { !$0.mine && $0.ownerID == ownerID && $0.act != .away && $0.act != .held }) else { return }
         if p.y == 0 { p.vy = 480; p.start(.jump, 2) }
-        say(p, "Psst, ada pesan dari \(name). ⌘-klik aku untuk membalas.", seconds: 7, force: true)
+        switch Prefs.petMessages {
+        case 2: break // tanpa balon: hanya melompat
+        case 1 where !(text ?? "").isEmpty:
+            say(p, Stage.clip(text!), seconds: 9, force: true, from: name)
+        default:
+            say(p, "Psst, ada pesan dari \(name). ⌘-klik aku untuk membalas.", seconds: 7, force: true)
+        }
         burst(.heart, at: p, count: 2)
+    }
+
+    /// Pesan panjang dipotong supaya balon tidak menutupi layar
+    static func clip(_ s: String, _ max: Int = 140) -> String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.count > max ? String(t.prefix(max)).trimmingCharacters(in: .whitespaces) + "…" : t
     }
 
     private func greet() {
@@ -372,11 +395,14 @@ final class Stage: NSObject {
 
     // MARK: balon kata & partikel
 
-    func say(_ p: Pet, _ text: String?, seconds: Double = 3, force: Bool = false) {
+    /// `from` diisi = kata-kata teman sendiri: balon Stroberi + nama pengirim di baris pertama.
+    /// Kosong = pet yang bicara: balon putih seperti biasa.
+    func say(_ p: Pet, _ text: String?, seconds: Double = 3, force: Bool = false, from: String? = nil) {
         guard let text, force || Prefs.bubbles else { return }
         let b = p.bubble ?? Bubble()
+        // warna diatur di setiap ucapan: balon yang sama bisa bergantian dipakai pet dan teman
+        b.layer.backgroundColor = (from == nil ? NSColor.white : strawberryColor).cgColor
         if p.bubble == nil {
-            b.layer.backgroundColor = NSColor.white.cgColor
             b.layer.borderColor = inkColor.cgColor
             b.layer.borderWidth = 2
             b.text.foregroundColor = inkColor.cgColor
@@ -388,12 +414,19 @@ final class Stage: NSObject {
             p.bubble = b
         }
         let font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        let box = (text as NSString).boundingRect(with: NSSize(width: 240, height: 400), options: [.usesLineFragmentOrigin],
-                                                  attributes: [.font: font], context: nil)
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        let body = NSMutableAttributedString()
+        if let from {
+            body.append(NSAttributedString(string: from + "\n", attributes: [.font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                                                                             .foregroundColor: inkColor, .paragraphStyle: para]))
+        }
+        body.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: inkColor, .paragraphStyle: para]))
+        let box = body.boundingRect(with: NSSize(width: 240, height: 400), options: [.usesLineFragmentOrigin])
         b.size = CGSize(width: ceil(box.width) + 18, height: ceil(box.height) + 12)
         b.text.font = font
         b.text.fontSize = 12
-        b.text.string = text
+        b.text.string = body
         b.text.frame = CGRect(x: 8, y: 5, width: ceil(box.width) + 2, height: ceil(box.height) + 2)
         b.until = clock + seconds
     }
