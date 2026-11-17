@@ -36,12 +36,14 @@ enum Prefs {
         let i = defaults.integer(forKey: "messageSoundIndex")
         return messageSounds.indices.contains(i) ? messageSounds[i] : messageSounds[0]
     }
+    /// Privasi: popover membuka dengan obrolan tertutup; isi pesan baru tampil setelah diklik
+    static var hideChat: Bool { defaults.bool(forKey: "hideChat") }
 
     static func register() {
         defaults.register(defaults: [
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
-            "messageSound": true, "messageSoundIndex": 0,
+            "messageSound": true, "messageSoundIndex": 0, "hideChat": false,
         ])
     }
 }

@@ -209,13 +209,14 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     private lazy var loginSwitch = Form.toggle(self, #selector(loginChanged(_:)))
     private lazy var soundSwitch = Form.toggle(self, #selector(boolChanged(_:)))
     private lazy var soundPopup = Form.popup(Prefs.messageSounds.enumerated().map { ($0.element, $0.offset) }, self, #selector(intChanged(_:)))
+    private lazy var hideChatSwitch = Form.toggle(self, #selector(boolChanged(_:)))
 
     /// kontrol → kunci UserDefaults
     private lazy var keys: [(NSControl, String)] = [
         (desktopSwitch, "showDesktop"), (sizePopup, "petScale"), (livelyPopup, "liveliness"), (levelPopup, "stageLevel"),
         (bubbleSwitch, "bubbles"), (surpriseSwitch, "surprises"), (cursorSwitch, "followCursor"), (nightSwitch, "sleepAtNight"),
         (remindSwitch, "reminders"), (remindPopup, "reminderMinutes"),
-        (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"),
+        (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"), (hideChatSwitch, "hideChat"),
     ]
 
     // tab Pet & Akun
@@ -296,6 +297,8 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
             Form.section("Pesan", [
                 Form.row("Suara pesan", "Bunyi pelan saat pesan dari teman masuk. Titik merah di ikon menu bar tetap muncul walau ini dimatikan.", soundSwitch),
                 Form.row("Bunyi", nil, soundPopup),
+                Form.row("Sembunyikan obrolan", "Popover dibuka dengan obrolan tertutup; klik \"Obrolan\" untuk melihat isinya. " +
+                         "Berguna kalau layarmu sering terlihat orang lain.", hideChatSwitch),
                 Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
                          "Klik kanan ikon untuk menu lengkap.", nil),
             ]),

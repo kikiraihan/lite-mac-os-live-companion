@@ -88,6 +88,7 @@ jobs:
           shot terang false --demo
           shot gelap true --demo
           shot obrolan-kosong false --demo --demo-empty
+          shot obrolan-tersembunyi false --demo --demo-hidden
           shot belum-terhubung true
           ls -la dist/screens
 

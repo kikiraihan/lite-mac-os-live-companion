@@ -384,6 +384,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         guard account.isLinked, !friendID.isEmpty else { return }
         chat.refresh()
         chat.select(friendID)
+        chat.reveal() // diminta langsung: obrolan terbuka walau "Sembunyikan obrolan" nyala
         showPopover()
     }
 
