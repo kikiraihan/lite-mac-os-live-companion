@@ -41,12 +41,19 @@ enum Prefs {
     /// Pesan & sapaan teman di balon kata pet pengirim:
     /// 0 pet memberi tahu (isi pesan chat tidak tampil), 1 tampilkan isi pesan (balon warna teman), 2 jangan tampilkan balon
     static var petMessages: Int { min(2, max(0, defaults.integer(forKey: "petMessages"))) }
+    /// Tanda pesan belum dibaca di ikon menu bar: 0 titik merah, 1 jumlah pesan, 2 tanpa tanda
+    static var unreadBadge: Int { min(2, max(0, defaults.integer(forKey: "unreadBadge"))) }
+    /// Pet di ikon menu bar sesekali melambai selama ada pesan belum dibaca
+    static var unreadWave: Bool { defaults.bool(forKey: "unreadWave") }
+    /// Posisi popover obrolan: 0 di bawah ikon menu bar, 1 di samping pet di desktop
+    static var chatNearPet: Bool { defaults.integer(forKey: "chatPosition") == 1 }
 
     static func register() {
         defaults.register(defaults: [
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
             "messageSound": true, "messageSoundIndex": 0, "hideChat": false, "petMessages": 0,
+            "unreadBadge": 0, "unreadWave": false, "chatPosition": 0,
         ])
     }
 }
@@ -94,6 +101,7 @@ final class Pet {
     var quarry = Quarry.cursor
     var kicks = 0
     var offstage = false    // boleh berjalan keluar layar (pergi mencari hadiah)
+    var waiting = false     // popover obrolan sedang terbuka di sampingnya → diam menunggu sampai ditutup
     var blinkEvery = Double.random(in: 2.5...5.5)
     var bubble: Bubble?
     var frame = Frame.idle
@@ -380,6 +388,27 @@ final class Stage: NSObject {
         burst(.heart, at: p, count: 2)
     }
 
+    /// Pet untuk tempat popover obrolan (Pengaturan › Pesan › Posisi obrolan = di samping pet):
+    /// pet teman yang diajak bicara kalau tampil, kalau tidak pet sendiri. nil = tidak ada yang terlihat di desktop.
+    func chatPet(for friendID: String?) -> Pet? {
+        guard Prefs.showDesktop, window.isVisible else { return nil }
+        let seen = { (p: Pet) in p.act != .away && !p.offstage && p.x > 0 && p.x < self.width }
+        if let id = friendID, let p = pets.first(where: { !$0.mine && $0.ownerID == id && seen($0) }) { return p }
+        return pets.first(where: { $0.mine && seen($0) }) ?? pets.first(where: seen)
+    }
+
+    /// Kotak pet di koordinat layar (untuk menempelkan popover)
+    func screenRect(of p: Pet) -> NSRect {
+        let o = window.frame.origin
+        return NSRect(x: o.x + p.x - 12 * s, y: o.y + floorY + p.y, width: 24 * s, height: 22 * s)
+    }
+
+    /// Ada pesan belum dibaca: pet di ikon menu bar melambai sebentar (Pengaturan › Pesan › Pet melambai)
+    func waveBarPet() {
+        guard let p = barPet, p.act != .held, p.act != .away, p.act != .fall, p.act != .wave else { return }
+        p.start(.wave, 1.6)
+    }
+
     /// Pesan panjang dipotong supaya balon tidak menutupi layar
     static func clip(_ s: String, _ max: Int = 140) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -579,6 +608,12 @@ final class Stage: NSObject {
     }
 
     private func step(_ p: Pet, _ dt: Double) {
+        // menunggu di samping popover obrolan: tetap berdiri di tempat (yang sedang melompat / jatuh / dipegang dibiarkan selesai dulu)
+        if p.waiting, p.y == 0, p.act != .held, p.act != .jump, p.act != .fall {
+            if p.act != .idle { p.start(.idle, 1) }
+            p.t = 0
+            return
+        }
         p.t += dt
         let done = p.t >= p.dur
         switch p.act {

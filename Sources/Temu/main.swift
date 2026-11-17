@@ -221,6 +221,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     /// Isi popover (chat + aksi pet), dipakai juga oleh ⌘-klik pet teman
     let chat = PopoverModel()
     private var popoverLastClose = Date.distantPast
+    /// Selama ada pesan belum dibaca, pet di ikon menu bar sesekali melambai (kalau dinyalakan)
+    private var waveTimer: Timer?
+    /// Popover obrolan di samping pet: jendela kecil tak terlihat di posisi pet sebagai jangkar popover
+    private lazy var petAnchor: NSPanel = {
+        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: true)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = false
+        w.ignoresMouseEvents = true
+        w.isReleasedWhenClosed = false
+        w.level = .floating
+        w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        return w
+    }()
+    /// Pet yang sedang menunggu di samping popover (diam sampai popover ditutup)
+    private weak var waitingPet: Pet?
 
     /// Klik kiri ikon menu bar: popover chat. Klik kanan / Control-klik: menu lengkap (native).
     lazy var popover: NSPopover = {
@@ -271,6 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             guard let self else { return }
             self.barKey = ""
             self.updateBar()
+            self.updateWave()
             if let from {
                 self.chat.noteUnread(from: from)
                 self.newMessage(from)
@@ -315,8 +333,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
 
     func showPopover() {
         guard let b = statusItem.button else { return }
+        // Pengaturan › Pesan › Posisi obrolan: di samping pet (--demo-pet: tangkapan layar CI)
+        let nearPet = Prefs.chatNearPet || CommandLine.arguments.contains("--demo-pet")
+        let pet = nearPet ? stage.chatPet(for: chat.selected) : nil
+        // sudah terbuka di tempat lain (mis. di menu bar lalu ⌘-klik pet) → tutup dulu, buka lagi di tempat yang benar
+        if popover.isShown, pet !== waitingPet {
+            popover.close()
+            releasePet() // close() tanpa animasi: pastikan jangkar lama dilepas walau notifikasi tutup tidak datang
+        }
         chat.opened()
-        if !popover.isShown { popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY) }
+        if !popover.isShown {
+            if let pet, let host = petAnchor.contentView {
+                let r = stage.screenRect(of: pet)
+                petAnchor.setFrame(r, display: false)
+                petAnchor.orderFrontRegardless()
+                let onRight = r.midX > (petAnchor.screen ?? NSScreen.main)?.frame.midX ?? 0
+                pet.waiting = true
+                pet.facing = onRight ? -1 : 1 // menghadap ke popover
+                waitingPet = pet
+                popover.show(relativeTo: host.bounds, of: host, preferredEdge: onRight ? .minX : .maxX)
+            } else {
+                popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
+            }
+        }
         NSApp.activate(ignoringOtherApps: true)
         popover.contentViewController?.view.window?.makeKey()
     }
@@ -326,6 +365,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     func popoverDidClose(_ n: Notification) {
         popoverLastClose = Date()
         chat.closed()
+        releasePet()
+    }
+
+    /// Pet yang menunggu boleh bergerak lagi; jangkar popover disingkirkan
+    private func releasePet() {
+        waitingPet?.waiting = false
+        waitingPet = nil
+        petAnchor.orderOut(nil)
     }
 
     /// Menu lengkap untuk klik kanan: dipasang sebentar lalu dilepas lagi di menuDidClose
@@ -360,29 +407,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         let unread = account.unreadTotal
         let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : "\nKlik untuk ngobrol, klik kanan untuk menu"
         guard let p = stage.barPet else {
-            if barKey != "empty|\(unread)" {
-                barKey = "empty|\(unread)"
-                b.image = withBadge(Skin.builtin(Prefs.species).barImage(.sleep, flip: false), unread > 0)
+            if barKey != "empty|\(unread)|\(Prefs.unreadBadge)" {
+                barKey = "empty|\(unread)|\(Prefs.unreadBadge)"
+                b.image = withBadge(Skin.builtin(Prefs.species).barImage(.sleep, flip: false), unread)
                 b.toolTip = (account.isLinked ? "Belum ada pet yang tampil di Mac. Atur di web Temu." : appDisplayName) + note
             }
             return
         }
-        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)|\(unread)"
+        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)|\(unread)|\(Prefs.unreadBadge)"
         guard key != barKey else { return }
         barKey = key
-        b.image = withBadge(p.skin.barImage(p.frame, flip: p.facing < 0), unread > 0)
+        b.image = withBadge(p.skin.barImage(p.frame, flip: p.facing < 0), unread)
         b.toolTip = stage.describe(p) + note
     }
 
-    private func withBadge(_ img: NSImage, _ on: Bool) -> NSImage {
-        guard on else { return img }
-        return NSImage(size: img.size, flipped: false) { rect in
-            img.draw(in: rect)
-            let d: CGFloat = 7
+    /// Tanda pesan belum dibaca di samping pet (tidak menimpa sprite, supaya tetap terlihat pada pet berwarna gelap).
+    /// Pengaturan › Pesan › Tanda pesan baru: titik merah / jumlah pesan / tanpa tanda.
+    private func withBadge(_ img: NSImage, _ unread: Int) -> NSImage {
+        guard unread > 0, Prefs.unreadBadge != 2 else { return img }
+        let w = img.size.width, h = img.size.height
+        if Prefs.unreadBadge == 1 {
+            // pil berangka, rata atas
+            let text = NSAttributedString(string: unread > 99 ? "99+" : "\(unread)", attributes: [
+                .font: NSFont.systemFont(ofSize: 9, weight: .bold), .foregroundColor: NSColor.white,
+            ])
+            let tw = ceil(text.size().width)
+            let pill = NSSize(width: max(12, tw + 7), height: 12)
+            return NSImage(size: NSSize(width: w + 1 + pill.width, height: h), flipped: false) { _ in
+                img.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+                let r = NSRect(x: w + 1, y: h - pill.height, width: pill.width, height: pill.height)
+                NSColor.systemRed.setFill()
+                NSBezierPath(roundedRect: r, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+                let ts = text.size()
+                text.draw(at: NSPoint(x: r.midX - ts.width / 2, y: r.midY - ts.height / 2))
+                return true
+            }
+        }
+        // titik merah di kanan atas, di luar sprite
+        let d: CGFloat = 8
+        return NSImage(size: NSSize(width: w + d - 1, height: h), flipped: false) { _ in
+            img.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
             NSColor.systemRed.setFill()
-            NSBezierPath(ovalIn: NSRect(x: rect.maxX - d, y: rect.maxY - d, width: d, height: d)).fill()
+            NSBezierPath(ovalIn: NSRect(x: w - 1, y: h - d, width: d, height: d)).fill()
             return true
         }
+    }
+
+    /// Nyalakan / matikan lambaian pet di ikon menu bar sesuai jumlah belum dibaca & pengaturan
+    func updateWave() {
+        let on = Prefs.unreadWave && account.unreadTotal > 0
+        if !on { waveTimer?.invalidate(); waveTimer = nil; return }
+        guard waveTimer == nil else { return }
+        stage.waveBarPet()
+        let t = Timer(timeInterval: 20, repeats: true) { [weak self] _ in self?.stage.waveBarPet() }
+        t.tolerance = 4
+        RunLoop.main.add(t, forMode: .common)
+        waveTimer = t
     }
 
     // MARK: chat

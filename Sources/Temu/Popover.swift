@@ -141,7 +141,7 @@ final class PopoverModel: ObservableObject {
 
     func closed() {
         visible = false
-        revealNext = false
+        // revealNext tidak direset di sini: popover bisa ditutup lalu dibuka lagi di posisi pet (openChat → showPopover)
         refreshTimer?.invalidate()
         refreshTimer = nil
     }
@@ -443,6 +443,11 @@ struct PopoverView: View {
             } else if !model.expanded {
                 hiddenChat
             } else {
+                // header tetap di posisi yang sama saat obrolan terbuka → satu klik di tempat yang sama untuk menutup
+                if model.hideChat {
+                    hiddenChat
+                    Divider()
+                }
                 friendStrip
                 Divider()
                 chat
@@ -461,16 +466,6 @@ struct PopoverView: View {
     // MARK: teman
 
     private var friendStrip: some View {
-        HStack(spacing: 0) {
-            friendList
-            if model.hideChat {
-                IconButton(symbol: "chevron.up", help: "Sembunyikan obrolan") { model.collapse() }
-                    .padding(.trailing, 8)
-            }
-        }
-    }
-
-    private var friendList: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 4) {
                 ForEach(model.friends) { f in
@@ -509,9 +504,11 @@ struct PopoverView: View {
     }
 
     /// Obrolan tertutup (Pengaturan › Pesan › Sembunyikan obrolan): hanya jumlah pesan baru, tanpa nama atau isi
+    /// Saat terbuka baris ini tetap di atas (posisi sama) dan berganti jadi "Sembunyikan ⌃"
     private var hiddenChat: some View {
         let n = model.totalUnread
-        return Button { model.expand() } label: {
+        let open = model.expanded
+        return Button { if open { model.collapse() } else { model.expand() } } label: {
             HStack(spacing: 8) {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -527,19 +524,21 @@ struct PopoverView: View {
                         .background(Capsule().fill(Color.red))
                 }
                 Spacer(minLength: 4)
-                Text("Tampilkan")
+                Text(open ? "Sembunyikan" : "Tampilkan")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                Image(systemName: "chevron.down")
+                Image(systemName: open ? "chevron.up" : "chevron.down")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
+                    .frame(width: 12) // panah tidak bergeser saat tulisannya berganti
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help((n > 0 ? "\(n) pesan baru. " : "") + "Obrolan disembunyikan supaya tidak terbaca orang lain. Atur di Pengaturan › Pesan.")
+        .help(open ? "Sembunyikan obrolan lagi" :
+              (n > 0 ? "\(n) pesan baru. " : "") + "Obrolan disembunyikan supaya tidak terbaca orang lain. Atur di Pengaturan › Pesan.")
     }
 
     private func friendHelp(_ f: ChatFriend) -> String {

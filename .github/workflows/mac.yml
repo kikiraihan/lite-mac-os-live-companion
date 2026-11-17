@@ -91,6 +91,7 @@ jobs:
           shot obrolan-tersembunyi false --demo --demo-hidden
           shot emoji false --demo --demo-emoji
           shot balon-teman false --demo --demo-bubble
+          shot samping-pet false --demo --demo-pet
           shot belum-terhubung true
           ls -la dist/screens
 

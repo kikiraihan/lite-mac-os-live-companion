@@ -210,6 +210,9 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     private lazy var soundSwitch = Form.toggle(self, #selector(boolChanged(_:)))
     private lazy var soundPopup = Form.popup(Prefs.messageSounds.enumerated().map { ($0.element, $0.offset) }, self, #selector(intChanged(_:)))
     private lazy var hideChatSwitch = Form.toggle(self, #selector(boolChanged(_:)))
+    private lazy var badgePopup = Form.popup([("Titik merah", 0), ("Jumlah pesan", 1), ("Tanpa tanda", 2)], self, #selector(intChanged(_:)))
+    private lazy var waveSwitch = Form.toggle(self, #selector(boolChanged(_:)))
+    private lazy var chatPositionPopup = Form.popup([("Di bawah ikon menu bar", 0), ("Di samping pet", 1)], self, #selector(intChanged(_:)))
     private lazy var petMessagesPopup = Form.popup([("Pet memberi tahu", 0), ("Tampilkan isi pesan", 1), ("Jangan tampilkan", 2)],
                                                    self, #selector(intChanged(_:)))
 
@@ -219,6 +222,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         (bubbleSwitch, "bubbles"), (surpriseSwitch, "surprises"), (cursorSwitch, "followCursor"), (nightSwitch, "sleepAtNight"),
         (remindSwitch, "reminders"), (remindPopup, "reminderMinutes"),
         (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"), (hideChatSwitch, "hideChat"), (petMessagesPopup, "petMessages"),
+        (badgePopup, "unreadBadge"), (waveSwitch, "unreadWave"), (chatPositionPopup, "chatPosition"),
     ]
 
     // tab Pet & Akun
@@ -301,6 +305,10 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Bunyi", nil, soundPopup),
                 Form.row("Sembunyikan obrolan", "Popover dibuka dengan obrolan tertutup; klik \"Obrolan\" untuk melihat isinya. " +
                          "Berguna kalau layarmu sering terlihat orang lain.", hideChatSwitch),
+                Form.row("Posisi obrolan", "\"Di samping pet\": obrolan muncul di sebelah pet teman (atau pet-mu) di desktop, " +
+                         "dan pet itu diam menunggu sampai obrolan ditutup. Kalau pet tidak tampil, obrolan muncul di menu bar.", chatPositionPopup),
+                Form.row("Tanda pesan baru", "Tanda di samping pet pada ikon menu bar selama ada pesan yang belum dibaca.", badgePopup),
+                Form.row("Pet melambai", "Pet di ikon menu bar sesekali melambai selama ada pesan yang belum dibaca.", waveSwitch),
                 Form.row("Pesan di pet teman", "Saat pesan atau sapaan masuk, pet pengirim di desktop memberi tahu. \"Tampilkan isi pesan\" " +
                          "memperlihatkan kata-kata temanmu di balon merah muda, jadi orang di dekatmu bisa ikut membaca.", petMessagesPopup),
                 Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
@@ -460,6 +468,8 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         guard let k = key(for: s) else { return }
         defaults.set(s.state == .on, forKey: k)
         app.stage.applyPrefs()
+        app.updateBar()
+        app.updateWave()
         reload()
     }
     @objc func intChanged(_ p: NSPopUpButton) {
@@ -467,6 +477,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         defaults.set(p.selectedTag(), forKey: k)
         if p === soundPopup { NSSound(named: NSSound.Name(Prefs.messageSoundName))?.play() } // dengarkan pilihannya
         app.stage.applyPrefs()
+        app.updateBar()
         reload()
     }
     @objc func loginChanged(_ s: NSSwitch) {
