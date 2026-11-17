@@ -212,6 +212,8 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     private lazy var hideChatSwitch = Form.toggle(self, #selector(boolChanged(_:)))
     private lazy var badgePopup = Form.popup([("Titik merah", 0), ("Jumlah pesan", 1), ("Tanpa tanda", 2)], self, #selector(intChanged(_:)))
     private lazy var waveSwitch = Form.toggle(self, #selector(boolChanged(_:)))
+    private lazy var chatClickPopup = Form.popup(Prefs.chatClicks.enumerated().map { ($0.element.title, $0.offset) },
+                                                 self, #selector(intChanged(_:)))
     private lazy var chatPositionPopup = Form.popup([("Di bawah ikon menu bar", 0), ("Di samping pet", 1)], self, #selector(intChanged(_:)))
     private lazy var petMessagesPopup = Form.popup([("Pet memberi tahu", 0), ("Tampilkan isi pesan", 1), ("Jangan tampilkan", 2)],
                                                    self, #selector(intChanged(_:)))
@@ -222,7 +224,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         (bubbleSwitch, "bubbles"), (surpriseSwitch, "surprises"), (cursorSwitch, "followCursor"), (nightSwitch, "sleepAtNight"),
         (remindSwitch, "reminders"), (remindPopup, "reminderMinutes"),
         (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"), (hideChatSwitch, "hideChat"), (petMessagesPopup, "petMessages"),
-        (badgePopup, "unreadBadge"), (waveSwitch, "unreadWave"), (chatPositionPopup, "chatPosition"),
+        (badgePopup, "unreadBadge"), (waveSwitch, "unreadWave"), (chatPositionPopup, "chatPosition"), (chatClickPopup, "chatClick"),
     ]
 
     // tab Pet & Akun
@@ -312,7 +314,9 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Pesan di pet teman", "Saat pesan atau sapaan masuk, pet pengirim di desktop memberi tahu. \"Tampilkan isi pesan\" " +
                          "memperlihatkan kata-kata temanmu di balon merah muda, jadi orang di dekatmu bisa ikut membaca.", petMessagesPopup),
                 Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
-                         "⌘-klik ikon untuk langsung membuka obrolan di menu bar. Klik kanan ikon untuk menu lengkap.", nil),
+                         "Klik ikon sambil menahan pintasan di bawah untuk langsung membuka obrolan di menu bar. Klik kanan ikon untuk menu lengkap.", nil),
+                Form.row("Pintasan buka obrolan", "Obrolan langsung terbuka di menu bar, walau posisinya di samping pet atau sedang disembunyikan. " +
+                         "⌘-klik saja tidak bisa karena macOS memakainya untuk memindahkan ikon.", chatClickPopup),
             ]),
             Form.section("Sistem", [
                 Form.row("Buka saat login", "\(appDisplayName) otomatis berjalan setiap Mac dinyalakan.", loginSwitch),
