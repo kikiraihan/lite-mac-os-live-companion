@@ -236,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Prefs.register()
+        MainMenu.install(target: self) // pintasan ⌘C / ⌘V / ⌘A / ⌘Z / ⌘, / ⌘Q
         stage.applyPrefs() // panggung dibuat sebelum nilai bawaan pengaturan terdaftar
         statusItem.autosaveName = "Temu" // posisi ikon diingat
         menu.delegate = self
@@ -384,6 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         guard account.isLinked, !friendID.isEmpty else { return }
         chat.refresh()
         chat.select(friendID)
+        chat.reveal() // diminta langsung: obrolan terbuka walau "Sembunyikan obrolan" nyala
         showPopover()
     }
 
