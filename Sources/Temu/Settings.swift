@@ -210,13 +210,15 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     private lazy var soundSwitch = Form.toggle(self, #selector(boolChanged(_:)))
     private lazy var soundPopup = Form.popup(Prefs.messageSounds.enumerated().map { ($0.element, $0.offset) }, self, #selector(intChanged(_:)))
     private lazy var hideChatSwitch = Form.toggle(self, #selector(boolChanged(_:)))
+    private lazy var petMessagesPopup = Form.popup([("Pet memberi tahu", 0), ("Tampilkan isi pesan", 1), ("Jangan tampilkan", 2)],
+                                                   self, #selector(intChanged(_:)))
 
     /// kontrol → kunci UserDefaults
     private lazy var keys: [(NSControl, String)] = [
         (desktopSwitch, "showDesktop"), (sizePopup, "petScale"), (livelyPopup, "liveliness"), (levelPopup, "stageLevel"),
         (bubbleSwitch, "bubbles"), (surpriseSwitch, "surprises"), (cursorSwitch, "followCursor"), (nightSwitch, "sleepAtNight"),
         (remindSwitch, "reminders"), (remindPopup, "reminderMinutes"),
-        (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"), (hideChatSwitch, "hideChat"),
+        (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"), (hideChatSwitch, "hideChat"), (petMessagesPopup, "petMessages"),
     ]
 
     // tab Pet & Akun
@@ -286,7 +288,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
             Form.section("Perilaku", [
                 Form.row("Sifat", "Kalem lebih sering diam dan rebahan; lincah lebih sering berlari dan membuat kejutan.", livelyPopup),
                 Form.row("Kejutan", "Bersin, tersandung, mengejar kupu-kupu, main bola, pulang membawa hadiah.", surpriseSwitch),
-                Form.row("Balon kata", "Pet sesekali berceloteh. Sapaan dari teman tetap tampil walau ini dimatikan.", bubbleSwitch),
+                Form.row("Balon kata", "Pet sesekali berceloteh. Sapaan dari teman tetap tampil walau ini dimatikan (atur di \"Pesan di pet teman\").", bubbleSwitch),
                 Form.row("Mendekati kursor", "Sesekali pet menghampiri kursor. Hanya posisi kursor yang dibaca, bukan klik atau ketikan.", cursorSwitch),
                 Form.row("Tidur di malam hari", "Antara pukul 22.00 dan 06.00 pet lebih sering tidur.", nightSwitch),
             ]),
@@ -299,6 +301,8 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Bunyi", nil, soundPopup),
                 Form.row("Sembunyikan obrolan", "Popover dibuka dengan obrolan tertutup; klik \"Obrolan\" untuk melihat isinya. " +
                          "Berguna kalau layarmu sering terlihat orang lain.", hideChatSwitch),
+                Form.row("Pesan di pet teman", "Saat pesan atau sapaan masuk, pet pengirim di desktop memberi tahu. \"Tampilkan isi pesan\" " +
+                         "memperlihatkan kata-kata temanmu di balon merah muda, jadi orang di dekatmu bisa ikut membaca.", petMessagesPopup),
                 Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
                          "Klik kanan ikon untuk menu lengkap.", nil),
             ]),

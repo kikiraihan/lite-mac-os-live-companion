@@ -161,6 +161,10 @@ final class Account {
     /// Apakah percakapan dengan teman ini sedang dibaca (jendela chat-nya aktif)
     var isViewing: ((String) -> Bool)?
 
+    /// Isi pesan masuk terakhir per teman (dari saluran real-time), diambil sekali untuk balon kata pet
+    private var lastIncoming: [String: String] = [:]
+    func takeIncoming(_ friend: String) -> String? { lastIncoming.removeValue(forKey: friend) }
+
     /// Pesan belum dibaca per id teman
     private(set) var unread: [String: Int] = [:]
     /// Nama teman yang pernah terlihat (dari pet titipan, kabar pesan, daftar belum dibaca)
@@ -587,6 +591,7 @@ final class Account {
             if let n = ev.friend_name, !n.isEmpty { friendNames[friend] = n }
             onMessage?(friend, m)
             if !m.mine, isViewing?(friend) != true {
+                lastIncoming[friend] = m.text
                 unread[friend, default: 0] += 1
                 onUnread?(friend)
             }
