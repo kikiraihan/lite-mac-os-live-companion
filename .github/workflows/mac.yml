@@ -74,17 +74,21 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p dist/screens
-          for mode in terang gelap; do
-            dark=false; [ "$mode" = gelap ] && dark=true
+          shot() { # shot <nama> <gelap:true|false> <argumen…>
+            name=$1; dark=$2; shift 2
             osascript -e "tell application \"System Events\" to tell appearance preferences to set dark mode to $dark" || true
             sleep 1
-            "build/$APP.app/Contents/MacOS/$APP" --demo --popover &
+            "build/$APP.app/Contents/MacOS/$APP" --popover "$@" &
             PID=$!
             sleep 8
-            screencapture -x "dist/screens/popover-$mode.png" || true
+            screencapture -x "dist/screens/popover-$name.png" || true
             kill "$PID" || true
             sleep 1
-          done
+          }
+          shot terang false --demo
+          shot gelap true --demo
+          shot obrolan-kosong false --demo --demo-empty
+          shot belum-terhubung true
           ls -la dist/screens
 
       - uses: actions/upload-artifact@v4

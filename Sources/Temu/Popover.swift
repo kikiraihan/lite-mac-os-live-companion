@@ -244,7 +244,8 @@ final class PopoverModel: ObservableObject {
         ]
         threads["r"] = []
         hasMore = ["d": false, "r": false]
-        selected = "d"
+        // --demo-empty: obrolan kosong (saran kalimat pembuka) untuk tangkapan layar
+        selected = CommandLine.arguments.contains("--demo-empty") ? "r" : "d"
     }
 }
 
