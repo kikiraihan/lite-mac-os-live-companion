@@ -64,7 +64,15 @@ struct SyncResponse: Codable {
     let pets: [RemotePet]
     let nudges: [RemoteNudge]
     let unread: [UnreadEntry]?
+    /// semua teman (lawan bicara di popover); kosong di server lama
+    let friends: [RemoteFriend]?
     let poll_seconds: Int?
+}
+
+struct RemoteFriend: Codable {
+    let id: String
+    let name: String
+    let handle: String
 }
 
 /// Pesan belum dibaca dari satu teman
@@ -157,6 +165,8 @@ final class Account {
     private(set) var unread: [String: Int] = [:]
     /// Nama teman yang pernah terlihat (dari pet titipan, kabar pesan, daftar belum dibaca)
     private(set) var friendNames: [String: String] = [:]
+    /// Semua teman akun ini (dari sync, disimpan supaya popover langsung terisi saat offline)
+    private(set) var friends: [RemoteFriend] = []
     var unreadTotal: Int { unread.values.reduce(0, +) }
     /// Saluran real-time sedang tersambung (kalau tidak, jendela chat menyegarkan sendiri berkala)
     private(set) var liveConnected = false
@@ -244,6 +254,10 @@ final class Account {
         if isLinked {
             statusText = userHandle.isEmpty ? "Terhubung" : "Terhubung sebagai @\(userHandle)"
             loadCachedRoster()
+            if let raw = defaults.data(forKey: "friends"), let f = try? JSONDecoder().decode([RemoteFriend].self, from: raw) {
+                friends = f
+                for x in f { friendNames[x.id] = x.name }
+            }
             sync(force: true)
             connectLive()
         }
@@ -333,6 +347,8 @@ final class Account {
         disconnectLive()
         unread = [:]
         friendNames = [:]
+        friends = []
+        defaults.removeObject(forKey: "friends")
         onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
         defaults.removeObject(forKey: "accountHandle")
@@ -365,6 +381,11 @@ final class Account {
             self.statusText = "Terhubung sebagai @\(r.user.handle)"
             if let raw = try? JSONEncoder().encode(r.pets) { defaults.set(raw, forKey: "roster") }
             for p in r.pets where !p.mine { if let o = p.owner_id { self.friendNames[o] = p.owner_name } }
+            if let f = r.friends {
+                self.friends = f
+                for x in f { self.friendNames[x.id] = x.name }
+                if let raw = try? JSONEncoder().encode(f) { defaults.set(raw, forKey: "friends") }
+            }
             if let u = r.unread { self.applyUnread(u) }
             if !self.liveConnected { self.connectLive() }
             self.buildRoster(r.pets) {

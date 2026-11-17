@@ -7,12 +7,13 @@
 //   Pet.swift       panggung desktop: gerak, kejutan, interaksi mouse
 //   Lines.swift     celoteh pet
 //   Client.swift    akun Temu: hubungkan Mac, ambil pet & sapaan teman, pesan + saluran real-time
-//   Chat.swift      jendela chat dengan teman (⌘-klik pet teman)
+//   Popover.swift   popover klik kiri ikon menu bar: chat dengan teman + aksi pet (SwiftUI)
 //   Settings.swift  jendela Pengaturan
 //   main.swift      ikon menu bar, menu, pembaruan, siklus hidup aplikasi
 
 import Cocoa
 import ServiceManagement
+import SwiftUI
 
 let defaults = UserDefaults.standard
 let appDisplayName = "Temu"
@@ -208,7 +209,7 @@ final class Updater: NSObject {
 
 // MARK: - Aplikasi
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopoverDelegate {
     let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let stage = Stage()
     let account = Account()
@@ -216,9 +217,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let menu = NSMenu()
     lazy var settings = SettingsWindow(app: self)
     private var barKey = ""
-    /// Jendela chat yang terbuka, per id teman
-    private var chats: [String: ChatWindow] = [:]
     private var lastSound = Date.distantPast
+    /// Isi popover (chat + aksi pet), dipakai juga oleh ⌘-klik pet teman
+    let chat = PopoverModel()
+    private var popoverLastClose = Date.distantPast
+
+    /// Klik kiri ikon menu bar: popover chat. Klik kanan / Control-klik: menu lengkap (native).
+    lazy var popover: NSPopover = {
+        let p = NSPopover()
+        p.behavior = .transient
+        p.animates = true
+        p.delegate = self
+        let host = NSHostingController(rootView: PopoverView(model: chat))
+        host.sizingOptions = .preferredContentSize // tinggi popover mengikuti isi (belum terhubung / chat)
+        p.contentViewController = host
+        return p
+    }()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Prefs.register()
@@ -226,7 +240,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.autosaveName = "Temu" // posisi ikon diingat
         menu.delegate = self
         menu.autoenablesItems = false
-        statusItem.menu = menu // klik kiri maupun kanan membuka menu yang sama
+        chat.app = self
+        if let b = statusItem.button {
+            b.target = self
+            b.action = #selector(statusItemClicked(_:))
+            b.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        // aplikasi lain jadi aktif (klik di luar popover) → popover ditutup
+        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.popover.performClose(nil)
+        }
 
         stage.onFrame = { [weak self] in self?.updateBar() }
         stage.onContextMenu = { [weak self] event, view in
@@ -237,32 +260,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         account.onChange = { [weak self] in
             self?.refreshRoster()
             self?.settings.reload()
+            self?.chat.refresh()
         }
         account.onNudge = { [weak self] from, text in self?.stage.deliverNudge(from: from, text: text) }
         stage.onChat = { [weak self] p in self?.openChat(p.ownerID) }
-        account.isViewing = { [weak self] id in self?.chats[id]?.isViewing ?? false }
-        account.onMessage = { [weak self] id, m in self?.chats[id]?.receive(m) }
+        account.isViewing = chat.isViewing
+        account.onMessage = { [weak self] id, m in self?.chat.receive(id, m) }
         account.onUnread = { [weak self] from in
             guard let self else { return }
             self.barKey = ""
             self.updateBar()
-            if let from { self.newMessage(from) }
+            if let from {
+                self.chat.noteUnread(from: from)
+                self.newMessage(from)
+            }
+            self.chat.refresh()
         }
-        updater.onChange = { [weak self] in self?.settings.reload() }
+        updater.onChange = { [weak self] in
+            self?.settings.reload()
+            self?.chat.refresh()
+        }
 
         refreshRoster()
-        account.start()
+        let args = CommandLine.arguments
+        if args.contains("--demo") { chat.startDemo() } else { account.start() } // --demo: data contoh, tanpa server
         updater.start()
         updateBar()
+        // --popover: buka popover saat start (dipakai CI untuk tangkapan layar)
+        if args.contains("--popover") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.showPopover() }
+        }
+    }
+
+    // MARK: popover
+
+    @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
+        let e = NSApp.currentEvent
+        if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
+            showMenu()
+        } else if popover.isShown {
+            popover.performClose(nil)
+        } else if Date().timeIntervalSince(popoverLastClose) > 0.3 { // klik yang barusan menutup popover → jangan buka lagi
+            showPopover()
+        }
+    }
+
+    func showPopover() {
+        guard let b = statusItem.button else { return }
+        chat.opened()
+        if !popover.isShown { popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY) }
+        NSApp.activate(ignoringOtherApps: true)
+        popover.contentViewController?.view.window?.makeKey()
+    }
+
+    func closePopover() { if popover.isShown { popover.performClose(nil) } }
+
+    func popoverDidClose(_ n: Notification) {
+        popoverLastClose = Date()
+        chat.closed()
+    }
+
+    /// Menu lengkap untuk klik kanan: dipasang sebentar lalu dilepas lagi di menuDidClose
+    private func showMenu() {
+        closePopover()
+        statusItem.menu = menu
+        statusItem.button?.performClick(nil)
+    }
+
+    func menuDidClose(_ m: NSMenu) {
+        if m === menu { statusItem.menu = nil }
     }
 
     /// Pet yang tampil: dari akun kalau terhubung, kalau tidak pet bawaan pilihan di Pengaturan
     func refreshRoster() {
-        if !account.isLinked, !chats.isEmpty { // akun diputus → chat ditutup
-            let open = chats
-            chats = [:]
-            open.values.forEach { $0.close() }
-        }
         if account.isLinked {
             stage.setRoster(account.roster)
         } else {
@@ -272,6 +342,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.applicationIconImage = (stage.barPet?.skin ?? Skin.builtin(Prefs.species)).portrait(.happy, points: 4)
         barKey = ""
         updateBar()
+        chat.refresh() // avatar teman = pet-nya yang tampil di Mac
     }
 
     /// Ikon menu bar = pet yang sedang beraksi (diperbarui hanya kalau posenya berubah)
@@ -279,7 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func updateBar() {
         guard let b = statusItem.button else { return }
         let unread = account.unreadTotal
-        let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : ""
+        let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : "\nKlik untuk ngobrol, klik kanan untuk menu"
         guard let p = stage.barPet else {
             if barKey != "empty|\(unread)" {
                 barKey = "empty|\(unread)"
@@ -308,14 +379,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: chat
 
+    /// Buka popover dengan obrolan teman ini (⌘-klik pet-nya, atau "Kirim pesan ke …" di menu)
     func openChat(_ friendID: String) {
         guard account.isLinked, !friendID.isEmpty else { return }
-        let c = chats[friendID] ?? ChatWindow(app: self, friendID: friendID)
-        if chats[friendID] == nil {
-            c.onClose = { [weak self] in self?.chats[friendID] = nil }
-            chats[friendID] = c
-        }
-        c.show()
+        chat.refresh()
+        chat.select(friendID)
+        showPopover()
     }
 
     @objc func openChatItem(_ it: NSMenuItem) {
@@ -423,6 +492,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         defaults.set(!Prefs.showDesktop, forKey: "showDesktop")
         stage.applyPrefs()
         settings.reload()
+        chat.refresh()
     }
     @objc func linkAccount() { account.beginLink() }
     @objc func cancelLink() {
@@ -444,11 +514,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard a.runModal() == .alertFirstButtonReturn else { return }
         account.unlink()
     }
-    @objc func openWeb() {
-        if let u = URL(string: account.server + "/pet") { NSWorkspace.shared.open(u) }
+    @objc func openWeb() { openWebPath("/pet") }
+    func openWebPath(_ path: String) {
+        closePopover()
+        if let u = URL(string: account.server + path) { NSWorkspace.shared.open(u) }
     }
     @objc func syncNow() { account.sync(force: true) }
-    @objc func openSettings() { settings.show(.general) }
+    @objc func openSettings() {
+        closePopover()
+        settings.show(.general)
+    }
+    func checkUpdate() {
+        closePopover()
+        updater.checkNow()
+    }
 
     @objc func toggleLogin() {
         do {
