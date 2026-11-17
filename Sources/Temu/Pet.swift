@@ -47,13 +47,27 @@ enum Prefs {
     static var unreadWave: Bool { defaults.bool(forKey: "unreadWave") }
     /// Posisi popover obrolan: 0 di bawah ikon menu bar, 1 di samping pet di desktop
     static var chatNearPet: Bool { defaults.integer(forKey: "chatPosition") == 1 }
+    /// Pintasan klik ikon menu bar yang langsung membuka obrolan di popover menu bar.
+    /// ⌘ sendirian tidak bisa: macOS memakai ⌘-tekan untuk memindahkan ikon di menu bar.
+    static let chatClicks: [(title: String, keys: NSEvent.ModifierFlags?)] = [
+        ("⌥-klik (Option)", [.option]), ("⇧-klik (Shift)", [.shift]), ("⌃-klik (Control)", [.control]),
+        ("⇧⌘-klik (Shift-Command)", [.shift, .command]), ("Mati", nil),
+    ]
+    static var chatClick: (title: String, keys: NSEvent.ModifierFlags?) {
+        let i = defaults.integer(forKey: "chatClick")
+        return chatClicks.indices.contains(i) ? chatClicks[i] : chatClicks[0]
+    }
+    /// Label pendek untuk tooltip, mis. "⌥-klik"; nil kalau pintasan dimatikan
+    static var chatClickLabel: String? {
+        chatClick.keys == nil ? nil : String(chatClick.title.prefix(while: { $0 != " " }))
+    }
 
     static func register() {
         defaults.register(defaults: [
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
             "messageSound": true, "messageSoundIndex": 0, "hideChat": false, "petMessages": 0,
-            "unreadBadge": 0, "unreadWave": false, "chatPosition": 0,
+            "unreadBadge": 0, "unreadWave": false, "chatPosition": 0, "chatClick": 0,
         ])
     }
 }

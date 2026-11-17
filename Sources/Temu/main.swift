@@ -342,21 +342,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
         let e = NSApp.currentEvent
-        let command = e?.modifierFlags.contains(.command) == true
+        // Pengaturan › Pesan › Pintasan buka obrolan (⌥ / ⇧ / ⌃ / ⇧⌘ + klik): tombol yang ditahan harus persis sama
+        let mods = (e?.modifierFlags ?? []).intersection([.command, .shift, .option, .control])
+        let chatClick = e?.type == .leftMouseUp && Prefs.chatClick.keys.map { mods == $0 } == true
         // ⌘-seret (memindahkan ikon di menu bar) → bukan klik: jangan buka apa pun
         if e?.type == .leftMouseUp, let press = barPress {
             barPress = nil
             let moved = hypot(NSEvent.mouseLocation.x - press.point.x, NSEvent.mouseLocation.y - press.point.y) > 4
             if moved || sender.window.map({ $0.frame.origin != press.frame.origin }) == true { return }
         }
-        if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
+        // ⌃-klik = menu, kecuali ⌃-klik dipilih sebagai pintasan buka obrolan (klik kanan tetap menu)
+        if e?.type == .rightMouseUp || (!chatClick && mods.contains(.control)) {
             showMenu()
         } else if popover.isShown {
-            popover.performClose(nil)
+            if chatClick, chat.chatElsewhere || !chat.expanded { // terbuka tanpa obrolan → buka ulang dengan obrolan
+                popover.close()
+                popoverClosed(popover)
+                showPopover(withChat: true)
+            } else {
+                popover.performClose(nil)
+            }
         } else if Date().timeIntervalSince(popoverLastClose) > 0.3 { // klik yang barusan menutup popover → jangan buka lagi
             // ⌘-klik: obrolan langsung terbuka di popover menu bar (walau Posisi obrolan = di samping pet,
             // atau Sembunyikan obrolan nyala)
-            showPopover(withChat: command)
+            // (sejak 1.7.1: pintasannya bisa dipilih, karena ⌘-klik ditangkap macOS untuk memindahkan ikon)
+            showPopover(withChat: chatClick)
         }
     }
 
@@ -475,16 +485,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     func updateBar() {
         guard let b = statusItem.button else { return }
         let unread = account.unreadTotal
-        let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : "\nKlik untuk ngobrol, ⌘-klik untuk langsung membuka obrolan, klik kanan untuk menu"
+        let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : "\nKlik untuk ngobrol, " +
+            (Prefs.chatClickLabel.map { "\($0) untuk langsung membuka obrolan, " } ?? "") + "klik kanan untuk menu"
         guard let p = stage.barPet else {
-            if barKey != "empty|\(unread)|\(Prefs.unreadBadge)" {
-                barKey = "empty|\(unread)|\(Prefs.unreadBadge)"
+            if barKey != "empty|\(unread)|\(Prefs.unreadBadge)|\(Prefs.chatClickLabel ?? "")" {
+                barKey = "empty|\(unread)|\(Prefs.unreadBadge)|\(Prefs.chatClickLabel ?? "")"
                 b.image = withBadge(Skin.builtin(Prefs.species).barImage(.sleep, flip: false), unread)
                 b.toolTip = (account.isLinked ? "Belum ada pet yang tampil di Mac. Atur di web Temu." : appDisplayName) + note
             }
             return
         }
-        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)|\(unread)|\(Prefs.unreadBadge)"
+        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)|\(unread)|\(Prefs.unreadBadge)|\(Prefs.chatClickLabel ?? "")"
         guard key != barKey else { return }
         barKey = key
         b.image = withBadge(p.skin.barImage(p.frame, flip: p.facing < 0), unread)
