@@ -312,7 +312,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Pesan di pet teman", "Saat pesan atau sapaan masuk, pet pengirim di desktop memberi tahu. \"Tampilkan isi pesan\" " +
                          "memperlihatkan kata-kata temanmu di balon merah muda, jadi orang di dekatmu bisa ikut membaca.", petMessagesPopup),
                 Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
-                         "Klik kanan ikon untuk menu lengkap.", nil),
+                         "⌘-klik ikon untuk langsung membuka obrolan di menu bar. Klik kanan ikon untuk menu lengkap.", nil),
             ]),
             Form.section("Sistem", [
                 Form.row("Buka saat login", "\(appDisplayName) otomatis berjalan setiap Mac dinyalakan.", loginSwitch),
