@@ -95,6 +95,10 @@ func TestChat(t *testing.T) {
 	if u := dmac.must(200, "GET", "/api/app/sync", nil)["unread"]; !unreadOK(u) {
 		t.Fatalf("unread sync: %v", u)
 	}
+	// daftar teman di sync: Kiki saja (Raka bukan teman Dina)
+	if f := list(dmac.must(200, "GET", "/api/app/sync", nil), "friends"); len(f) != 1 || f[0].(map[string]any)["id"] != kikiID {
+		t.Fatalf("teman di sync: %v", f)
+	}
 	if h := next(t, dial(t, ts, dmac.bearer)); !unreadOK(h["unread"]) {
 		t.Fatalf("unread hello: %v", h)
 	}

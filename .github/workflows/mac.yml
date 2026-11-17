@@ -68,6 +68,36 @@ jobs:
           sleep 6
           if kill -0 "$PID" 2>/dev/null; then kill "$PID"; echo "Masih hidup setelah 6 detik — OK"; else echo "::error::Temu keluar sendiri saat dijalankan"; exit 1; fi
 
+      # tangkapan layar popover dengan data contoh (--demo, tanpa server), mode terang & gelap.
+      # Hasilnya diunggah sebagai artifact "Temu-screens" untuk memeriksa tampilan tanpa Mac.
+      - name: Tangkapan layar popover
+        continue-on-error: true
+        run: |
+          mkdir -p dist/screens
+          shot() { # shot <nama> <gelap:true|false> <argumen…>
+            name=$1; dark=$2; shift 2
+            osascript -e "tell application \"System Events\" to tell appearance preferences to set dark mode to $dark" || true
+            sleep 1
+            "build/$APP.app/Contents/MacOS/$APP" --popover "$@" &
+            PID=$!
+            sleep 8
+            screencapture -x "dist/screens/popover-$name.png" || true
+            kill "$PID" || true
+            sleep 1
+          }
+          shot terang false --demo
+          shot gelap true --demo
+          shot obrolan-kosong false --demo --demo-empty
+          shot belum-terhubung true
+          ls -la dist/screens
+
+      - uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: Temu-screens
+          path: dist/screens/
+          if-no-files-found: ignore
+
       - name: Buat installer & zip
         run: |
           ./scripts/make-installer.sh

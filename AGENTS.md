@@ -65,6 +65,10 @@ jalankan `make sprites`. CI menolak kalau keduanya tidak sinkron.
 
 - **Aplikasi Mac**: gaya Apple (HIG) — kontrol bawaan sistem, satu baris = judul + keterangan + satu kontrol
   (`Form` di `Settings.swift`), label pendek berbahasa Indonesia, aksi yang menghapus selalu dikonfirmasi.
+  Popover klik kiri ikon menu bar (`Popover.swift`, SwiftUI) = chat dulu, lalu aksi pet, lalu status & tombol
+  ikon; keterangan panjang hanya di tooltip (`.help`), warna dari `Brand` (sama dengan `docs/DESIGN.md`).
+  Klik kanan ikon = menu native lengkap. Cek tampilan lewat artifact `Temu-screens` di workflow Mac
+  (`--demo --popover`, data contoh tanpa server).
 - **Web**: ikuti `docs/DESIGN.md`. Jangan menambah warna, font, radius, atau bayangan baru; pakai kelas di
   `web/src/style.css` (`.px`, `.btn`, `.input`, `.tag`, `.notice`, `.empty`). Satu-satunya hal yang ramai
   adalah pet-nya.

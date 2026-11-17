@@ -296,8 +296,8 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
             Form.section("Pesan", [
                 Form.row("Suara pesan", "Bunyi pelan saat pesan dari teman masuk. Titik merah di ikon menu bar tetap muncul walau ini dimatikan.", soundSwitch),
                 Form.row("Bunyi", nil, soundPopup),
-                Form.row("Cara mengirim pesan", "⌘-klik pet teman di desktop, atau pilih \"Kirim pesan ke …\" di menu \(appDisplayName). " +
-                         "Hanya untuk pet titipan teman.", nil),
+                Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
+                         "Klik kanan ikon untuk menu lengkap.", nil),
             ]),
             Form.section("Sistem", [
                 Form.row("Buka saat login", "\(appDisplayName) otomatis berjalan setiap Mac dinyalakan.", loginSwitch),

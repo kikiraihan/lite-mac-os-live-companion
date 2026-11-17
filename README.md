@@ -41,9 +41,11 @@ hidup di desktop-nya.
   contoh tata letak ke ChatGPT, lalu unggah hasilnya. Server memotong, membuang latar, dan merapikannya jadi pixel art.
 - Teman: undang lewat tautan atau nama pengguna. Minta pet teman; setelah diizinkan, pet itu ikut tampil di Mac-mu.
 - Sapa teman: pet di Mac-nya yang menyampaikan pesanmu.
-- Chat dari Mac: **⌘-klik pet teman** di desktop (atau "Kirim pesan ke …" di menu) membuka jendela chat. Pesan
-  sampai real-time lewat WebSocket; ada titik merah di ikon menu bar saat ada pesan belum dibaca, dan bunyi
-  pesan yang bisa diatur / dimatikan di Pengaturan → Umum → Pesan.
+- Chat dari Mac: **klik ikon Temu di menu bar** → popover yang langsung berisi obrolan (deretan teman di atas,
+  avatarnya pet mereka), dengan aksi pet (kasih makan, main bola, panggil, tampil/sembunyi), status akun, web,
+  dan pengaturan di bawahnya. **⌘-klik pet teman** di desktop membuka obrolan dengannya. Klik kanan ikon tetap
+  membuka menu lengkap. Pesan sampai real-time lewat WebSocket; ada titik merah di ikon menu bar saat ada pesan
+  belum dibaca, dan bunyi pesan yang bisa diatur / dimatikan di Pengaturan → Umum → Pesan.
 
 **Admin** (`/admin`, akun & sesi terpisah dari pengguna)
 

@@ -242,8 +242,28 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		return err
 	}
+	// semua teman (bukan hanya yang pet-nya tampil di Mac): daftar lawan bicara di popover chat
+	frows, err := s.DB.QueryContext(r.Context(), `SELECT u.id, u.name, u.handle FROM friendships f
+		JOIN users u ON u.id = CASE WHEN f.user_a=$1 THEN f.user_b ELSE f.user_a END
+		WHERE (f.user_a=$1 OR f.user_b=$1) AND u.disabled_at IS NULL ORDER BY lower(u.name)`, p.UserID)
+	if err != nil {
+		return err
+	}
+	defer frows.Close()
+	friends := []map[string]any{}
+	for frows.Next() {
+		var id, name, handle string
+		if err := frows.Scan(&id, &name, &handle); err != nil {
+			return err
+		}
+		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle})
+	}
+	if err := frows.Err(); err != nil {
+		return err
+	}
 	httpx.JSON(w, 200, map[string]any{
 		"user": map[string]any{"name": p.Name, "handle": p.Handle}, "pets": pets, "nudges": nudges, "unread": unread,
+		"friends":      friends,
 		"poll_seconds": 60, "web_url": s.Cfg.PublicURL,
 	})
 	return nil
