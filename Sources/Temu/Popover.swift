@@ -257,13 +257,15 @@ struct FriendAvatar: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(friend.skin == nil ? Brand.orange.opacity(0.25) : Color.primary.opacity(0.06))
+            Circle().fill(friend.skin == nil ? Brand.orange : Color.primary.opacity(0.07))
             if let skin = friend.skin {
-                Image(nsImage: skin.portrait(.idle, points: 1))
+                // pet menempati ±baris 14–32 sel 32×32 (kaki di tepi bawah): diperbesar & digeser ke atas
+                // supaya badan + wajahnya mengisi lingkaran, bukan kecil di dasar
+                Image(nsImage: skin.portrait(.idle, points: 2))
                     .interpolation(.none)
                     .resizable()
-                    .frame(width: size * 0.92, height: size * 0.92)
-                    .offset(y: size * 0.06)
+                    .frame(width: size * 1.45, height: size * 1.45)
+                    .offset(x: size * 0.07, y: -size * 0.31)
             } else {
                 Text(String(friend.name.prefix(1)).uppercased())
                     .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
@@ -463,6 +465,7 @@ struct PopoverView: View {
     private var thread: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                // obrolan pendek menempel ke bawah (dekat kolom tulis), seperti aplikasi chat pada umumnya
                 LazyVStack(spacing: 4) {
                     if model.hasMore[model.selected ?? ""] == true {
                         Button("Muat pesan sebelumnya") { model.loadOlder() }
@@ -484,6 +487,7 @@ struct PopoverView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+                .frame(minHeight: 300, alignment: .bottom)
             }
             .onAppear { scrollDown(proxy, animated: false) }
             .onChange(of: model.messages.last?.id) { _ in scrollDown(proxy, animated: true) }
