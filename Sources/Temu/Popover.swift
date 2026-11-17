@@ -141,7 +141,7 @@ final class PopoverModel: ObservableObject {
 
     func closed() {
         visible = false
-        revealNext = false
+        // revealNext tidak direset di sini: popover bisa ditutup lalu dibuka lagi di posisi pet (openChat → showPopover)
         refreshTimer?.invalidate()
         refreshTimer = nil
     }

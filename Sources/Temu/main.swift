@@ -223,6 +223,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     private var popoverLastClose = Date.distantPast
     /// Selama ada pesan belum dibaca, pet di ikon menu bar sesekali melambai (kalau dinyalakan)
     private var waveTimer: Timer?
+    /// Popover obrolan di samping pet: jendela kecil tak terlihat di posisi pet sebagai jangkar popover
+    private lazy var petAnchor: NSPanel = {
+        let w = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10), styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: true)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = false
+        w.ignoresMouseEvents = true
+        w.isReleasedWhenClosed = false
+        w.level = .floating
+        w.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+        return w
+    }()
+    /// Pet yang sedang menunggu di samping popover (diam sampai popover ditutup)
+    private weak var waitingPet: Pet?
 
     /// Klik kiri ikon menu bar: popover chat. Klik kanan / Control-klik: menu lengkap (native).
     lazy var popover: NSPopover = {
@@ -318,8 +333,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
 
     func showPopover() {
         guard let b = statusItem.button else { return }
+        // Pengaturan › Pesan › Posisi obrolan: di samping pet (--demo-pet: tangkapan layar CI)
+        let nearPet = Prefs.chatNearPet || CommandLine.arguments.contains("--demo-pet")
+        let pet = nearPet ? stage.chatPet(for: chat.selected) : nil
+        // sudah terbuka di tempat lain (mis. di menu bar lalu ⌘-klik pet) → tutup dulu, buka lagi di tempat yang benar
+        if popover.isShown, pet !== waitingPet {
+            popover.close()
+            releasePet() // close() tanpa animasi: pastikan jangkar lama dilepas walau notifikasi tutup tidak datang
+        }
         chat.opened()
-        if !popover.isShown { popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY) }
+        if !popover.isShown {
+            if let pet, let host = petAnchor.contentView {
+                let r = stage.screenRect(of: pet)
+                petAnchor.setFrame(r, display: false)
+                petAnchor.orderFrontRegardless()
+                let onRight = r.midX > (petAnchor.screen ?? NSScreen.main)?.frame.midX ?? 0
+                pet.waiting = true
+                pet.facing = onRight ? -1 : 1 // menghadap ke popover
+                waitingPet = pet
+                popover.show(relativeTo: host.bounds, of: host, preferredEdge: onRight ? .minX : .maxX)
+            } else {
+                popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY)
+            }
+        }
         NSApp.activate(ignoringOtherApps: true)
         popover.contentViewController?.view.window?.makeKey()
     }
@@ -329,6 +365,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     func popoverDidClose(_ n: Notification) {
         popoverLastClose = Date()
         chat.closed()
+        releasePet()
+    }
+
+    /// Pet yang menunggu boleh bergerak lagi; jangkar popover disingkirkan
+    private func releasePet() {
+        waitingPet?.waiting = false
+        waitingPet = nil
+        petAnchor.orderOut(nil)
     }
 
     /// Menu lengkap untuk klik kanan: dipasang sebentar lalu dilepas lagi di menuDidClose
