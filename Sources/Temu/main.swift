@@ -236,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
 
     func applicationDidFinishLaunching(_ n: Notification) {
         Prefs.register()
+        MainMenu.install(target: self) // pintasan ⌘C / ⌘V / ⌘A / ⌘Z / ⌘, / ⌘Q
         stage.applyPrefs() // panggung dibuat sebelum nilai bawaan pengaturan terdaftar
         statusItem.autosaveName = "Temu" // posisi ikon diingat
         menu.delegate = self

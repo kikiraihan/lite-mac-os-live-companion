@@ -1,6 +1,7 @@
 // Temu — popover menu bar (klik kiri ikon). Isinya langsung chat dengan teman:
 //   atas   : deretan teman (avatar = pet-nya), titik merah = pesan belum dibaca
 //   tengah : obrolan + kolom tulis (fokus otomatis, Return = kirim)
+//            tombol 🙂 membuka panel emoji bawaan (Unicode, font emoji sistem); ⌘C/⌘V/⌘A lewat MainMenu.swift
 //   bawah  : aksi pet (makan, bola, panggil, tampil/sembunyi) lalu status akun, web, pengaturan, keluar
 // Pengaturan › Pesan › "Sembunyikan obrolan": obrolan tertutup jadi satu baris "Obrolan" sampai diklik (privasi).
 // Keterangan panjang hanya di tooltip. Klik kanan ikon tetap membuka menu lengkap (native).
@@ -55,6 +56,8 @@ final class PopoverModel: ObservableObject {
     private(set) var visible = false
     private var lastUnreadFrom: String?
     private var refreshTimer: Timer?
+    /// Emoji yang baru dipakai (paling baru di depan), disimpan di UserDefaults
+    @Published private(set) var recentEmoji: [String] = defaults.stringArray(forKey: "recentEmoji") ?? []
     /// Dibuka lewat aksi yang memang meminta obrolan (⌘-klik pet teman, menu "Kirim pesan ke …") → langsung terbuka
     private var revealNext = false
 
@@ -79,6 +82,11 @@ final class PopoverModel: ObservableObject {
     var hideChat: Bool { Prefs.hideChat || (demo && CommandLine.arguments.contains("--demo-hidden")) }
 
     func draft(_ id: String) -> String { drafts[id] ?? "" }
+
+    func usedEmoji(_ e: String) {
+        recentEmoji = Array(([e] + recentEmoji.filter { $0 != e }).prefix(9))
+        if !demo { defaults.set(recentEmoji, forKey: "recentEmoji") }
+    }
 
     // MARK: siklus
 
@@ -302,6 +310,19 @@ struct FriendAvatar: View {
     }
 }
 
+/// Emoji bawaan: karakter Unicode biasa, digambar dengan font emoji sistem (tanpa paket tambahan)
+enum EmojiSet {
+    static let groups: [(String, [String])] = [
+        ("Wajah", ["😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😘", "😚", "😋", "😜", "🤪", "😎", "🤗", "🤭", "🤔",
+                   "😴", "🥱", "😅", "😇", "🙃", "😏", "😌", "😔", "😢", "😭", "😤", "😡", "🥺", "😳", "😱", "🤯"]),
+        ("Hati & tangan", ["❤️", "🧡", "💛", "💚", "💙", "💜", "🤍", "💕", "💖", "💔", "👍", "👎", "👏", "🙌", "🙏", "🤝",
+                           "👋", "✌️", "🤞", "👌", "💪", "🫶", "🤙", "👀"]),
+        ("Hewan", ["🐱", "🐶", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🐸", "🐧", "🐥", "🐟", "🦋", "🐾"]),
+        ("Lainnya", ["☕️", "🍵", "🍜", "🍕", "🍰", "🍫", "🎉", "🎂", "🎁", "✨", "⭐️", "🌙", "☀️", "🌧️", "🌸", "🔥",
+                     "💤", "💬", "📍", "🏠", "🚗", "✈️", "⚽️", "🎮"]),
+    ]
+}
+
 /// Tombol ikon kecil di baris paling bawah; artinya di tooltip
 struct IconButton: View {
     let symbol: String
@@ -356,6 +377,25 @@ struct ActionTile: View {
     }
 }
 
+/// Satu tombol emoji di panel
+struct EmojiKey: View {
+    let emoji: String
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(emoji)
+                .font(.system(size: 20))
+                .frame(width: 32, height: 30)
+                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.primary.opacity(hover ? 0.10 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+    }
+}
+
 struct PrimaryButton: View {
     let title: String
     let action: () -> Void
@@ -379,6 +419,7 @@ struct PrimaryButton: View {
 struct PopoverView: View {
     @ObservedObject var model: PopoverModel
     @FocusState private var focused: Bool
+    @State private var showEmoji = CommandLine.arguments.contains("--demo-emoji") // --demo-emoji: tangkapan layar CI
 
     private static let dayFormat: DateFormatter = {
         let f = DateFormatter()
@@ -529,6 +570,7 @@ struct PopoverView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 4)
             }
+            if showEmoji { emojiPanel }
             composer
         }
     }
@@ -596,6 +638,12 @@ struct PopoverView: View {
             .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
             .padding(.bottom, tail ? 6 : 0)
             .help(PopoverView.timeFormat.string(from: m.date))
+            .contextMenu {
+                Button("Salin pesan") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(m.text, forType: .string)
+                }
+            }
     }
 
     /// Obrolan kosong: pet teman menyapa + saran kalimat pembuka (mengisi kolom, tidak langsung terkirim)
@@ -639,6 +687,15 @@ struct PopoverView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(Capsule().fill(Color.primary.opacity(0.06)))
+            Button { showEmoji.toggle(); focused = true } label: {
+                Image(systemName: "face.smiling")
+                    .font(.system(size: 16))
+                    .foregroundStyle(showEmoji ? Brand.strawberry : Color.secondary)
+                    .frame(width: 24, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(showEmoji ? "Tutup emoji" : "Emoji")
             Button { model.send() } label: {
                 Group {
                     if model.sending {
@@ -659,6 +716,60 @@ struct PopoverView: View {
         .padding(.horizontal, 12)
         .padding(.top, 4)
         .padding(.bottom, 12)
+    }
+
+    // MARK: emoji
+
+    /// Panel emoji di atas kolom tulis: klik = sisipkan di posisi kursor, panel tetap terbuka untuk emoji berikutnya
+    private var emojiPanel: some View {
+        let cols = Array(repeating: GridItem(.fixed(32), spacing: 3), count: 9)
+        var groups = EmojiSet.groups
+        if !model.recentEmoji.isEmpty { groups.insert(("Baru dipakai", model.recentEmoji), at: 0) }
+        return VStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(groups, id: \.0) { g in
+                        Text(g.0)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                            .padding(.top, 4)
+                        LazyVGrid(columns: cols, alignment: .leading, spacing: 3) {
+                            ForEach(g.1, id: \.self) { e in
+                                EmojiKey(emoji: e) { insertEmoji(e) }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 6)
+            }
+            .frame(height: 150)
+            HStack {
+                Spacer()
+                Button("Semua emoji…") {
+                    focused = true
+                    DispatchQueue.main.async { NSApp.orderFrontCharacterPalette(nil) }
+                }
+                .buttonStyle(.link)
+                .font(.system(size: 11))
+                .help("Buka pemilih Emoji & Simbol bawaan macOS (⌃⌘Spasi)")
+            }
+            .padding(.horizontal, 14)
+            .padding(.bottom, 4)
+        }
+        .background(Color.primary.opacity(0.03))
+    }
+
+    /// Sisipkan di posisi kursor kolom tulis (menggantikan teks yang terpilih); kalau kolom tidak aktif, tambahkan di akhir
+    private func insertEmoji(_ e: String) {
+        let id = model.selected ?? ""
+        if let tv = NSApp.keyWindow?.firstResponder as? NSTextView, tv.isFieldEditor {
+            tv.insertText(e, replacementRange: tv.selectedRange())
+        } else {
+            model.drafts[id] = model.draft(id) + e
+        }
+        model.usedEmoji(e)
+        focused = true
     }
 
     // MARK: layar kosong
