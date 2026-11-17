@@ -596,7 +596,7 @@ struct PopoverView: View {
     /// Belum terhubung: satu ajakan jelas. Saat menunggu persetujuan, kodenya tampil besar.
     private var notLinked: some View {
         VStack(spacing: 10) {
-            Image(nsImage: model.ownSkin.portrait(.wave, points: 2))
+            Image(nsImage: model.ownSkin.portrait(.wave, points: 3))
                 .interpolation(.none)
             if let code = model.linkCode {
                 Text("Setujui kode ini di browser")
@@ -629,7 +629,7 @@ struct PopoverView: View {
 
     private var noFriends: some View {
         VStack(spacing: 10) {
-            Image(nsImage: model.ownSkin.portrait(.idle, points: 2))
+            Image(nsImage: model.ownSkin.portrait(.idle, points: 3))
                 .interpolation(.none)
             Text("Belum ada teman untuk diajak ngobrol")
                 .font(.system(size: 14, weight: .bold, design: .rounded))
