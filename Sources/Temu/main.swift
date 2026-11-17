@@ -238,6 +238,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     }()
     /// Pet yang sedang menunggu di samping popover (diam sampai popover ditutup)
     private weak var waitingPet: Pet?
+    /// Posisi kursor & ikon saat tombol ditekan di ikon menu bar — untuk membedakan ⌘-klik dari ⌘-seret
+    /// (⌘-seret = macOS memindahkan ikon di menu bar; popover tidak perlu dibuka)
+    private var barPress: (point: NSPoint, frame: NSRect)?
+    private var barPressMonitor: Any?
 
     /// Klik kiri ikon menu bar: popover chat. Klik kanan / Control-klik: menu lengkap (native).
     lazy var popover: NSPopover = makePopover(.menuBar)
@@ -268,6 +272,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             b.target = self
             b.action = #selector(statusItemClicked(_:))
             b.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+        // hanya event milik aplikasi ini sendiri (jendela ikon menu bar), bukan pemantauan global
+        barPressMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] e in
+            if let self, let w = self.statusItem.button?.window, e.window === w {
+                self.barPress = (NSEvent.mouseLocation, w.frame)
+            }
+            return e
         }
         // aplikasi lain jadi aktif (klik di luar popover) → popover ditutup
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -331,12 +342,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
         let e = NSApp.currentEvent
+        let command = e?.modifierFlags.contains(.command) == true
+        // ⌘-seret (memindahkan ikon di menu bar) → bukan klik: jangan buka apa pun
+        if e?.type == .leftMouseUp, let press = barPress {
+            barPress = nil
+            let moved = hypot(NSEvent.mouseLocation.x - press.point.x, NSEvent.mouseLocation.y - press.point.y) > 4
+            if moved || sender.window.map({ $0.frame.origin != press.frame.origin }) == true { return }
+        }
         if e?.type == .rightMouseUp || e?.modifierFlags.contains(.control) == true {
             showMenu()
         } else if popover.isShown {
             popover.performClose(nil)
         } else if Date().timeIntervalSince(popoverLastClose) > 0.3 { // klik yang barusan menutup popover → jangan buka lagi
-            showPopover()
+            // ⌘-klik: obrolan langsung terbuka di popover menu bar (walau Posisi obrolan = di samping pet,
+            // atau Sembunyikan obrolan nyala)
+            showPopover(withChat: command)
         }
     }
 
@@ -350,10 +370,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
 
     /// Popover menu bar. Kalau obrolan tinggal di samping pet, isinya baris "Obrolan" (pembuka) + aksi pet + status;
     /// kalau tidak, obrolan lengkap seperti biasa.
-    func showPopover() {
+    func showPopover(withChat: Bool = false) {
         guard let b = statusItem.button else { return }
         closePetChat()
-        let elsewhere = chatPetTarget() != nil
+        let elsewhere = !withChat && chatPetTarget() != nil
+        if withChat, chat.linked { chat.reveal() }
         chat.chatElsewhere = elsewhere
         if elsewhere { chat.refresh() } else { chat.opened() }
         if !popover.isShown { popover.show(relativeTo: b.bounds, of: b, preferredEdge: .minY) }
@@ -454,7 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     func updateBar() {
         guard let b = statusItem.button else { return }
         let unread = account.unreadTotal
-        let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : "\nKlik untuk ngobrol, klik kanan untuk menu"
+        let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : "\nKlik untuk ngobrol, ⌘-klik untuk langsung membuka obrolan, klik kanan untuk menu"
         guard let p = stage.barPet else {
             if barKey != "empty|\(unread)|\(Prefs.unreadBadge)" {
                 barKey = "empty|\(unread)|\(Prefs.unreadBadge)"
