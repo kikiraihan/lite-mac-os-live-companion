@@ -41,12 +41,17 @@ enum Prefs {
     /// Pesan & sapaan teman di balon kata pet pengirim:
     /// 0 pet memberi tahu (isi pesan chat tidak tampil), 1 tampilkan isi pesan (balon warna teman), 2 jangan tampilkan balon
     static var petMessages: Int { min(2, max(0, defaults.integer(forKey: "petMessages"))) }
+    /// Tanda pesan belum dibaca di ikon menu bar: 0 titik merah, 1 jumlah pesan, 2 tanpa tanda
+    static var unreadBadge: Int { min(2, max(0, defaults.integer(forKey: "unreadBadge"))) }
+    /// Pet di ikon menu bar sesekali melambai selama ada pesan belum dibaca
+    static var unreadWave: Bool { defaults.bool(forKey: "unreadWave") }
 
     static func register() {
         defaults.register(defaults: [
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
             "messageSound": true, "messageSoundIndex": 0, "hideChat": false, "petMessages": 0,
+            "unreadBadge": 0, "unreadWave": false,
         ])
     }
 }
@@ -378,6 +383,12 @@ final class Stage: NSObject {
             say(p, "Psst, ada pesan dari \(name). ⌘-klik aku untuk membalas.", seconds: 7, force: true)
         }
         burst(.heart, at: p, count: 2)
+    }
+
+    /// Ada pesan belum dibaca: pet di ikon menu bar melambai sebentar (Pengaturan › Pesan › Pet melambai)
+    func waveBarPet() {
+        guard let p = barPet, p.act != .held, p.act != .away, p.act != .fall, p.act != .wave else { return }
+        p.start(.wave, 1.6)
     }
 
     /// Pesan panjang dipotong supaya balon tidak menutupi layar

@@ -221,6 +221,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     /// Isi popover (chat + aksi pet), dipakai juga oleh ⌘-klik pet teman
     let chat = PopoverModel()
     private var popoverLastClose = Date.distantPast
+    /// Selama ada pesan belum dibaca, pet di ikon menu bar sesekali melambai (kalau dinyalakan)
+    private var waveTimer: Timer?
 
     /// Klik kiri ikon menu bar: popover chat. Klik kanan / Control-klik: menu lengkap (native).
     lazy var popover: NSPopover = {
@@ -271,6 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             guard let self else { return }
             self.barKey = ""
             self.updateBar()
+            self.updateWave()
             if let from {
                 self.chat.noteUnread(from: from)
                 self.newMessage(from)
@@ -360,29 +363,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         let unread = account.unreadTotal
         let note = unread > 0 ? "\n\(unread) pesan baru — klik untuk membaca" : "\nKlik untuk ngobrol, klik kanan untuk menu"
         guard let p = stage.barPet else {
-            if barKey != "empty|\(unread)" {
-                barKey = "empty|\(unread)"
-                b.image = withBadge(Skin.builtin(Prefs.species).barImage(.sleep, flip: false), unread > 0)
+            if barKey != "empty|\(unread)|\(Prefs.unreadBadge)" {
+                barKey = "empty|\(unread)|\(Prefs.unreadBadge)"
+                b.image = withBadge(Skin.builtin(Prefs.species).barImage(.sleep, flip: false), unread)
                 b.toolTip = (account.isLinked ? "Belum ada pet yang tampil di Mac. Atur di web Temu." : appDisplayName) + note
             }
             return
         }
-        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)|\(unread)"
+        let key = "\(p.id)|\(p.frame.rawValue)|\(p.facing < 0)|\(unread)|\(Prefs.unreadBadge)"
         guard key != barKey else { return }
         barKey = key
-        b.image = withBadge(p.skin.barImage(p.frame, flip: p.facing < 0), unread > 0)
+        b.image = withBadge(p.skin.barImage(p.frame, flip: p.facing < 0), unread)
         b.toolTip = stage.describe(p) + note
     }
 
-    private func withBadge(_ img: NSImage, _ on: Bool) -> NSImage {
-        guard on else { return img }
-        return NSImage(size: img.size, flipped: false) { rect in
-            img.draw(in: rect)
-            let d: CGFloat = 7
+    /// Tanda pesan belum dibaca di samping pet (tidak menimpa sprite, supaya tetap terlihat pada pet berwarna gelap).
+    /// Pengaturan › Pesan › Tanda pesan baru: titik merah / jumlah pesan / tanpa tanda.
+    private func withBadge(_ img: NSImage, _ unread: Int) -> NSImage {
+        guard unread > 0, Prefs.unreadBadge != 2 else { return img }
+        let w = img.size.width, h = img.size.height
+        if Prefs.unreadBadge == 1 {
+            // pil berangka, rata atas
+            let text = NSAttributedString(string: unread > 99 ? "99+" : "\(unread)", attributes: [
+                .font: NSFont.systemFont(ofSize: 9, weight: .bold), .foregroundColor: NSColor.white,
+            ])
+            let tw = ceil(text.size().width)
+            let pill = NSSize(width: max(12, tw + 7), height: 12)
+            return NSImage(size: NSSize(width: w + 1 + pill.width, height: h), flipped: false) { _ in
+                img.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
+                let r = NSRect(x: w + 1, y: h - pill.height, width: pill.width, height: pill.height)
+                NSColor.systemRed.setFill()
+                NSBezierPath(roundedRect: r, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+                let ts = text.size()
+                text.draw(at: NSPoint(x: r.midX - ts.width / 2, y: r.midY - ts.height / 2))
+                return true
+            }
+        }
+        // titik merah di kanan atas, di luar sprite
+        let d: CGFloat = 8
+        return NSImage(size: NSSize(width: w + d - 1, height: h), flipped: false) { _ in
+            img.draw(in: NSRect(x: 0, y: 0, width: w, height: h))
             NSColor.systemRed.setFill()
-            NSBezierPath(ovalIn: NSRect(x: rect.maxX - d, y: rect.maxY - d, width: d, height: d)).fill()
+            NSBezierPath(ovalIn: NSRect(x: w - 1, y: h - d, width: d, height: d)).fill()
             return true
         }
+    }
+
+    /// Nyalakan / matikan lambaian pet di ikon menu bar sesuai jumlah belum dibaca & pengaturan
+    func updateWave() {
+        let on = Prefs.unreadWave && account.unreadTotal > 0
+        if !on { waveTimer?.invalidate(); waveTimer = nil; return }
+        guard waveTimer == nil else { return }
+        stage.waveBarPet()
+        let t = Timer(timeInterval: 20, repeats: true) { [weak self] _ in self?.stage.waveBarPet() }
+        t.tolerance = 4
+        RunLoop.main.add(t, forMode: .common)
+        waveTimer = t
     }
 
     // MARK: chat
