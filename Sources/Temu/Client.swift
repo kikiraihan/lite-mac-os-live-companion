@@ -92,6 +92,17 @@ struct ChatMessage: Codable {
     let text: String
     let created_at: String
     let mine: Bool
+    /// Hanya pesanku: "sent" ✓, "delivered" ✓✓, "read" ✓✓ biru (nil di server lama / pesan masuk)
+    var status: String? = nil
+
+    /// Urutan status supaya hanya bisa naik (sent → delivered → read)
+    static func rank(_ s: String?) -> Int {
+        switch s {
+        case "read": return 2
+        case "delivered": return 1
+        default: return 0
+        }
+    }
 
     var date: Date {
         let f = ISO8601DateFormatter()
@@ -127,6 +138,9 @@ private struct LiveEvent: Codable {
     let online: Bool?
     /// "hello": id teman yang sedang online
     let online_friends: [String]?
+    /// "receipt": pesanku ke teman ini sampai id ini sudah diterima / dibaca
+    let delivered_upto: Int?
+    let read_upto: Int?
 }
 
 private struct LinkStart: Codable {
@@ -170,6 +184,8 @@ final class Account {
     var isViewing: ((String) -> Bool)?
     /// Status online teman berubah
     var onPresence: (() -> Void)?
+    /// Pesanku ke teman sudah diterima / dibaca (id teman, diterima sampai id, dibaca sampai id)
+    var onReceipt: ((String, Int?, Int?) -> Void)?
 
     /// Isi pesan masuk terakhir per teman (dari saluran real-time), diambil sekali untuk balon kata pet
     private var lastIncoming: [String: String] = [:]
@@ -636,6 +652,9 @@ final class Account {
             if let friend = ev.friend_id, unread.removeValue(forKey: friend) != nil { onUnread?(nil) }
         case "nudge":
             sync(force: true)
+        case "receipt":
+            guard let friend = ev.friend_id else { return }
+            onReceipt?(friend, ev.delivered_upto, ev.read_upto)
         case "presence":
             guard let friend = ev.friend_id, let on = ev.online else { return }
             var next = online
