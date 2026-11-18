@@ -27,6 +27,13 @@ import (
 // (users.hide_presence, diatur di web › Akun atau Pengaturan aplikasi Mac). Kabar offline ditunda liveGrace supaya Mac yang
 // hanya menyambung ulang (bangun dari tidur, ganti Wi-Fi) tidak membuat statusnya berkedip.
 //
+// Daftar teman (sync & web) membawa "presence" dengan tiga nilai (presence()):
+//
+//	"online"   saluran real-time tersambung
+//	"away"     Temu terbuka (Mac-nya memanggil /api/app/* dalam liveAway terakhir, setelah saluran terakhirnya
+//	           lepas) tapi saluran real-time-nya tidak tersambung: jaringan / proxy / server bermasalah
+//	"offline"  Temu tertutup / Mac tidur, atau statusnya disembunyikan (tidak dibedakan, supaya pilihan itu tidak bocor)
+//
 // Hub disimpan di memori: cukup untuk satu proses server (seperti deploy saat ini).
 
 const (
@@ -35,6 +42,15 @@ const (
 	livePerUser  = 20
 	liveSendSize = 32
 	liveGrace    = 20 * time.Second // jeda sebelum teman diberi kabar "offline"
+	// Mac yang memanggil /api/app/* selama ini dianggap Temu-nya masih terbuka. Aplikasi sinkron
+	// tiap 60 detik (±10), jadi 150 detik memberi ruang satu sinkron yang terlewat.
+	liveAway = 150 * time.Second
+)
+
+const (
+	presenceOnline  = "online"
+	presenceAway    = "away"
+	presenceOffline = "offline"
 )
 
 type liveConn struct {
@@ -50,9 +66,16 @@ type hub struct {
 	mu    sync.Mutex
 	users map[string]map[*liveConn]struct{}
 	grace time.Duration // = liveGrace; tes memperpendeknya
+	// seen: panggilan /api/app/* terakhir per user (dari Mac mana pun); gone: saat Mac terakhirnya lepas dari saluran.
+	// Keduanya hanya untuk membedakan "away" dari "offline" (presence), disimpan di memori seperti users.
+	seen, gone map[string]time.Time
+	away       time.Duration // = liveAway; tes memperpendeknya
 }
 
-func newHub() *hub { return &hub{users: map[string]map[*liveConn]struct{}{}, grace: liveGrace} }
+func newHub() *hub {
+	return &hub{users: map[string]map[*liveConn]struct{}{}, grace: liveGrace,
+		seen: map[string]time.Time{}, gone: map[string]time.Time{}, away: liveAway}
+}
 
 // add mendaftarkan koneksi; first = ini Mac pertama user yang tersambung (baru saja online)
 func (h *hub) add(c *liveConn) (ok, first bool) {
@@ -79,6 +102,7 @@ func (h *hub) remove(c *liveConn) (last bool) {
 		delete(set, c)
 		if len(set) == 0 {
 			delete(h.users, c.user)
+			h.gone[c.user] = time.Now()
 			return true
 		}
 	}
@@ -90,6 +114,41 @@ func (h *hub) online(user string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.users[user]) > 0
+}
+
+// touch mencatat bahwa Mac milik user baru saja memanggil /api/app/* (Temu-nya terbuka)
+func (h *hub) touch(user string) {
+	now := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.seen[user] = now
+	if len(h.seen) > 5000 { // buang catatan lama supaya peta tidak terus membesar
+		for u, t := range h.seen {
+			if now.Sub(t) > h.away {
+				delete(h.seen, u)
+				delete(h.gone, u)
+			}
+		}
+	}
+}
+
+// presence: "online" (tersambung), "away" (Temu terbuka tapi saluran real-time-nya tidak tersambung), atau "offline".
+// Away hanya kalau Mac itu memanggil server SETELAH saluran terakhirnya lepas: Mac yang ditutup / tidur tidak
+// memanggil apa-apa lagi, jadi langsung offline.
+func (h *hub) presence(user string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.users[user]) > 0 {
+		return presenceOnline
+	}
+	seen, ok := h.seen[user]
+	if !ok || time.Since(seen) > h.away {
+		return presenceOffline
+	}
+	if gone, ok := h.gone[user]; ok && !seen.After(gone) {
+		return presenceOffline
+	}
+	return presenceAway
 }
 
 // publish mengirim kabar ke semua Mac milik user. Koneksi yang antreannya penuh diputus
@@ -161,6 +220,14 @@ func (s *Server) friends(ctx context.Context, user string) ([]friendRef, error) 
 
 // seenOnline: status online user seperti yang boleh dilihat temannya
 func (s *Server) seenOnline(user string, hidden bool) bool { return !hidden && s.live.online(user) }
+
+// seenPresence: "online" / "away" / "offline" seperti yang boleh dilihat temannya (disembunyikan = offline)
+func (s *Server) seenPresence(user string, hidden bool) string {
+	if hidden {
+		return presenceOffline
+	}
+	return s.live.presence(user)
+}
 
 // announcePresence memberi tahu Mac teman-teman bahwa user online / offline.
 // Hanya teman yang menerima kabar ini (sama seperti pet dan pesan). Status yang disembunyikan tidak

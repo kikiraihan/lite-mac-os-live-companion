@@ -74,7 +74,7 @@ func (s *Server) listFriends(w http.ResponseWriter, r *http.Request) error {
 		index[id] = len(friends)
 		// online: Temu terbuka di Mac teman itu dan statusnya tidak disembunyikan (live.go)
 		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "since": at,
-			"online": s.seenOnline(id, hidden), "pets": []map[string]any{}})
+			"online": s.seenOnline(id, hidden), "presence": s.seenPresence(id, hidden), "pets": []map[string]any{}})
 	}
 	if err := rows.Err(); err != nil {
 		return err

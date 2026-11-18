@@ -77,6 +77,8 @@ struct RemoteFriend: Codable {
     let handle: String
     /// Temu sedang terbuka di minimal satu Mac milik teman ini; nil di server lama
     let online: Bool?
+    /// "online" / "away" (Temu terbuka tapi saluran real-time-nya tidak tersambung) / "offline"; nil di server lama
+    let presence: String?
 }
 
 /// Pesan belum dibaca dari satu teman
@@ -199,6 +201,13 @@ final class Account {
     private(set) var friends: [RemoteFriend] = []
     /// id teman yang sedang online (Temu terbuka di Mac-nya); dari sync dan saluran real-time, tidak dari cache
     private(set) var online: Set<String> = []
+    /// id teman yang Temu-nya terbuka tapi sambungannya ke server tersendat ("away"); hanya dari sync
+    private(set) var away: Set<String> = []
+    /// Hasil sync terakhir Mac ini: nil = belum ada, 200 = berhasil, 0 = server tidak terjangkau, selain itu = galat server
+    private(set) var lastSyncCode: Int?
+    /// Status teman bisa dipercaya: saluran real-time tersambung, atau sync terakhir berhasil.
+    /// Kalau tidak, masalahnya di Mac ini / server, bukan teman yang offline.
+    var presenceKnown: Bool { liveConnected || lastSyncCode == 200 }
     var unreadTotal: Int { unread.values.reduce(0, +) }
     /// Saluran real-time sedang tersambung (kalau tidak, jendela chat menyegarkan sendiri berkala)
     private(set) var liveConnected = false
@@ -383,6 +392,8 @@ final class Account {
         friendNames = [:]
         friends = []
         online = []
+        away = []
+        lastSyncCode = nil
         defaults.removeObject(forKey: "friends")
         onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
@@ -410,9 +421,13 @@ final class Account {
             }
             guard code == 200, let data, let r = try? JSONDecoder().decode(SyncResponse.self, from: data) else {
                 self.statusText = code == 0 ? "Offline — memakai pet tersimpan" : "Server bermasalah (\(code))"
+                self.lastSyncCode = code == 200 ? 500 : code // 200 tapi isinya tidak terbaca = tetap galat server
                 self.onChange?()
+                self.onPresence?() // status teman jadi "belum bisa dicek"
                 return
             }
+            let wasKnown = self.presenceKnown
+            self.lastSyncCode = 200
             defaults.set(r.user.handle, forKey: "accountHandle")
             if let h = r.user.hide_presence { defaults.set(h, forKey: "hidePresence") }
             self.statusText = "Terhubung sebagai @\(r.user.handle)"
@@ -421,9 +436,12 @@ final class Account {
             if let f = r.friends {
                 self.friends = f
                 for x in f { self.friendNames[x.id] = x.name }
+                let away = Set(f.filter { $0.presence == "away" }.map(\.id))
+                if away != self.away { self.away = away; self.onPresence?() }
                 self.setOnline(Set(f.filter { $0.online == true }.map(\.id)))
                 if let raw = try? JSONEncoder().encode(f) { defaults.set(raw, forKey: "friends") }
             }
+            if !wasKnown { self.onPresence?() } // status teman kembali bisa dipercaya
             if let u = r.unread { self.applyUnread(u) }
             if !self.liveConnected { self.connectLive() }
             self.buildRoster(r.pets) {
@@ -652,6 +670,8 @@ final class Account {
             guard let friend = ev.friend_id, let on = ev.online else { return }
             var next = online
             if on { next.insert(friend) } else { next.remove(friend) }
+            // kabar real-time lebih baru dari sync: "away" baru diketahui lagi di sync berikutnya (≤ 1 menit)
+            if away.remove(friend) != nil, next == online { onPresence?() }
             setOnline(next)
         default:
             break

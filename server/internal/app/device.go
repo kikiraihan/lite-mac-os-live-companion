@@ -51,6 +51,7 @@ func (s *Server) device(h Handler) http.HandlerFunc {
 		if err != nil || disabled.Valid {
 			return httpx.ErrUnauth
 		}
+		s.live.touch(p.UserID) // Temu terbuka di Mac ini (membedakan "away" dari "offline", live.go)
 		return h(w, withPrincipal(r, p))
 	})
 }
@@ -261,8 +262,9 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 			return err
 		}
 		// online = Temu sedang terbuka & tersambung di minimal satu Mac milik teman itu (live.go),
-		// kecuali teman itu menyembunyikan statusnya
-		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "online": s.seenOnline(id, hidden)})
+		// kecuali teman itu menyembunyikan statusnya. presence: "online" / "away" / "offline" (live.go)
+		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "online": s.seenOnline(id, hidden),
+			"presence": s.seenPresence(id, hidden)})
 	}
 	if err := frows.Err(); err != nil {
 		return err
