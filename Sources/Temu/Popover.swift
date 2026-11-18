@@ -28,8 +28,8 @@ struct ChatFriend: Identifiable, Equatable {
     let handle: String
     let skin: Skin?
     let unread: Int
-    /// Temu sedang terbuka di Mac-nya (nil = belum diketahui, mis. server lama atau belum pernah sinkron)
-    var online: Bool? = nil
+    /// Temu sedang terbuka di Mac-nya. false = offline atau belum diketahui (titik tetap tampil, abu-abu)
+    var online = false
 
     static func == (a: ChatFriend, b: ChatFriend) -> Bool {
         a.id == b.id && a.name == b.name && a.handle == b.handle && a.unread == b.unread && (a.skin == nil) == (b.skin == nil)
@@ -107,9 +107,9 @@ final class PopoverModel: ObservableObject {
         let acc = app.account
         var skins: [String: Skin] = [:]
         for p in app.stage.pets where !p.mine && !p.ownerID.isEmpty && skins[p.ownerID] == nil { skins[p.ownerID] = p.skin }
-        // titik status tampil kalau server-nya memang mengirim status (server lama: tanpa titik, bukan "offline" semua).
+        // titik status selalu tampil: hijau = online, abu-abu = offline / belum diketahui.
         // Tanpa saluran real-time, status tetap ikut sinkron berkala (paling lama ±1 menit tertinggal).
-        let presence = { (id: String) -> Bool? in acc.presenceKnown ? acc.online.contains(id) : nil }
+        let presence = { (id: String) -> Bool in acc.online.contains(id) }
         var list: [ChatFriend] = acc.friends.map {
             ChatFriend(id: $0.id, name: $0.name, handle: $0.handle, skin: skins[$0.id], unread: acc.unread[$0.id] ?? 0,
                        online: presence($0.id))
@@ -583,7 +583,7 @@ struct PopoverView: View {
                                     }
                                 }
                                 .overlay(alignment: .bottomTrailing) {
-                                    if let online = f.online { PresenceDot(online: online).offset(x: 1, y: 1) }
+                                    PresenceDot(online: f.online).offset(x: 1, y: 1)
                                 }
                             Text(f.name)
                                 .font(.system(size: 11, weight: on ? .semibold : .regular))
@@ -679,11 +679,8 @@ struct PopoverView: View {
     private func friendHelp(_ f: ChatFriend) -> String {
         var s = f.handle.isEmpty ? f.name : "\(f.name) · @\(f.handle)"
         if f.unread > 0 { s += " — \(f.unread) pesan baru" }
-        switch f.online {
-        case true?: s += "\nOnline — Temu sedang terbuka di Mac-nya."
-        case false?: s += "\nOffline — pesanmu tetap tersimpan dan terbaca saat Temu-nya dibuka lagi."
-        case nil: break
-        }
+        s += f.online ? "\nOnline — Temu sedang terbuka di Mac-nya."
+                      : "\nOffline — pesanmu tetap tersimpan dan terbaca saat Temu-nya dibuka lagi."
         if f.skin == nil { s += "\nPet-nya belum tampil di Mac ini. Minta pet-nya lewat web supaya bisa ⌘-klik di desktop." }
         return s
     }
@@ -708,7 +705,7 @@ struct PopoverView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 4)
-            } else if let f = model.current, f.online == false {
+            } else if let f = model.current, !f.online {
                 Text("\(f.name) sedang offline. Pesanmu tetap sampai saat Temu-nya dibuka lagi.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
