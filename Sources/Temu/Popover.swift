@@ -28,7 +28,7 @@ struct ChatFriend: Identifiable, Equatable {
     let handle: String
     let skin: Skin?
     let unread: Int
-    /// Temu sedang terbuka di Mac-nya (nil = belum diketahui, mis. Mac ini sedang tidak tersambung)
+    /// Temu sedang terbuka di Mac-nya (nil = belum diketahui, mis. server lama atau belum pernah sinkron)
     var online: Bool? = nil
 
     static func == (a: ChatFriend, b: ChatFriend) -> Bool {
@@ -107,9 +107,9 @@ final class PopoverModel: ObservableObject {
         let acc = app.account
         var skins: [String: Skin] = [:]
         for p in app.stage.pets where !p.mine && !p.ownerID.isEmpty && skins[p.ownerID] == nil { skins[p.ownerID] = p.skin }
-        // status online hanya bisa dipercaya selama saluran real-time Mac ini sendiri tersambung,
-        // dan hanya kalau server-nya memang mengirim status (server lama: tanpa titik, bukan "offline" semua)
-        let presence = { (id: String) -> Bool? in acc.liveConnected && acc.presenceKnown ? acc.online.contains(id) : nil }
+        // titik status tampil kalau server-nya memang mengirim status (server lama: tanpa titik, bukan "offline" semua).
+        // Tanpa saluran real-time, status tetap ikut sinkron berkala (paling lama ±1 menit tertinggal).
+        let presence = { (id: String) -> Bool? in acc.presenceKnown ? acc.online.contains(id) : nil }
         var list: [ChatFriend] = acc.friends.map {
             ChatFriend(id: $0.id, name: $0.name, handle: $0.handle, skin: skins[$0.id], unread: acc.unread[$0.id] ?? 0,
                        online: presence($0.id))
@@ -293,6 +293,7 @@ final class PopoverModel: ObservableObject {
             guard let self, self.visible, !(self.app?.account.liveConnected ?? true), let id = self.selected else { return }
             self.load(id)
             self.markRead(id)
+            self.app?.account.sync(force: false) // status online teman ikut segar (paling cepat sekali per 45 detik)
         }
         t.tolerance = 3
         RunLoop.main.add(t, forMode: .common)

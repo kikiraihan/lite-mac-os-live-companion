@@ -617,7 +617,7 @@ final class Account {
         liveTask?.cancel()
         liveTask = nil
         liveConnected = false
-        onPresence?() // status teman tidak diketahui sampai tersambung lagi
+        onPresence?() // tampilan dibaca ulang; status teman tetap ikut sinkron berkala sampai tersambung lagi
         guard isLinked else { return }
         if code == 401 { return sync(force: true) } // token dicabut → sync yang memutuskan akun
         let wait = liveRetry + Double.random(in: 0...1)
