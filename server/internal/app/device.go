@@ -28,6 +28,7 @@ func (s *Server) deviceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/app/sync", s.device(s.appSync))
 	mux.HandleFunc("GET /api/app/pets/{id}/sheet.png", s.device(s.appPetSheet))
 	mux.HandleFunc("POST /api/app/unlink", s.device(s.appUnlink))
+	mux.HandleFunc("PUT /api/app/presence", s.device(s.appPresence))
 
 	mux.HandleFunc("GET /api/link/{code}", s.user(s.linkInfo))
 	mux.HandleFunc("POST /api/link/{code}/approve", s.user(s.linkApprove))
@@ -243,7 +244,7 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// semua teman (bukan hanya yang pet-nya tampil di Mac): daftar lawan bicara di popover chat
-	frows, err := s.DB.QueryContext(r.Context(), `SELECT u.id, u.name, u.handle FROM friendships f
+	frows, err := s.DB.QueryContext(r.Context(), `SELECT u.id, u.name, u.handle, u.hide_presence FROM friendships f
 		JOIN users u ON u.id = CASE WHEN f.user_a=$1 THEN f.user_b ELSE f.user_a END
 		WHERE (f.user_a=$1 OR f.user_b=$1) AND u.disabled_at IS NULL ORDER BY lower(u.name)`, p.UserID)
 	if err != nil {
@@ -253,17 +254,24 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 	friends := []map[string]any{}
 	for frows.Next() {
 		var id, name, handle string
-		if err := frows.Scan(&id, &name, &handle); err != nil {
+		var hidden bool
+		if err := frows.Scan(&id, &name, &handle, &hidden); err != nil {
 			return err
 		}
-		// online = Temu sedang terbuka & tersambung di minimal satu Mac milik teman itu (live.go)
-		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "online": s.live.online(id)})
+		// online = Temu sedang terbuka & tersambung di minimal satu Mac milik teman itu (live.go),
+		// kecuali teman itu menyembunyikan statusnya
+		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "online": s.seenOnline(id, hidden)})
 	}
 	if err := frows.Err(); err != nil {
 		return err
 	}
+	var hidePresence bool
+	if err := s.DB.QueryRowContext(r.Context(), `SELECT hide_presence FROM users WHERE id=$1`, p.UserID).Scan(&hidePresence); err != nil {
+		return err
+	}
 	httpx.JSON(w, 200, map[string]any{
-		"user": map[string]any{"name": p.Name, "handle": p.Handle}, "pets": pets, "nudges": nudges, "unread": unread,
+		"user": map[string]any{"name": p.Name, "handle": p.Handle, "hide_presence": hidePresence},
+		"pets": pets, "nudges": nudges, "unread": unread,
 		"friends":      friends,
 		"poll_seconds": 60, "web_url": s.Cfg.PublicURL,
 	})
@@ -292,5 +300,23 @@ func (s *Server) appUnlink(w http.ResponseWriter, r *http.Request) error {
 	}
 	s.live.dropDevice(who(r).DeviceID)
 	httpx.JSON(w, 200, map[string]any{"ok": true})
+	return nil
+}
+
+// appPresence: "Sembunyikan status online-ku" dari Pengaturan aplikasi Mac. Body {"hidden": true|false}.
+func (s *Server) appPresence(w http.ResponseWriter, r *http.Request) error {
+	var req struct {
+		Hidden *bool `json:"hidden"`
+	}
+	if err := httpx.Decode(r, &req, 1<<10); err != nil {
+		return err
+	}
+	if req.Hidden == nil {
+		return httpx.Invalid("Isi \"hidden\" dengan true atau false.")
+	}
+	if err := s.setHidePresence(r.Context(), who(r).UserID, *req.Hidden); err != nil {
+		return err
+	}
+	httpx.JSON(w, 200, map[string]any{"hidden": *req.Hidden})
 	return nil
 }

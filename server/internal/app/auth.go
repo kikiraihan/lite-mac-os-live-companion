@@ -80,11 +80,13 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, userID str
 func (s *Server) meData(r *http.Request, userID string) (map[string]any, error) {
 	var email, name, handle string
 	var created time.Time
-	if err := s.DB.QueryRowContext(r.Context(), `SELECT email, name, handle, created_at FROM users WHERE id=$1`, userID).
-		Scan(&email, &name, &handle, &created); err != nil {
+	var hidePresence bool
+	if err := s.DB.QueryRowContext(r.Context(), `SELECT email, name, handle, created_at, hide_presence FROM users WHERE id=$1`, userID).
+		Scan(&email, &name, &handle, &created, &hidePresence); err != nil {
 		return nil, err
 	}
-	return map[string]any{"user": map[string]any{"id": userID, "email": email, "name": name, "handle": handle, "created_at": created}}, nil
+	return map[string]any{"user": map[string]any{"id": userID, "email": email, "name": name, "handle": handle, "created_at": created,
+		"hide_presence": hidePresence}}, nil
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) error {
@@ -225,8 +227,9 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) error {
 
 func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
-		Name   *string `json:"name"`
-		Handle *string `json:"handle"`
+		Name         *string `json:"name"`
+		Handle       *string `json:"handle"`
+		HidePresence *bool   `json:"hide_presence"` // sembunyikan status online dari teman (live.go)
 	}
 	if err := httpx.Decode(r, &req, 1<<12); err != nil {
 		return err
@@ -253,6 +256,11 @@ func (s *Server) updateMe(w http.ResponseWriter, r *http.Request) error {
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return httpx.Err(409, "handle_taken", "Nama pengguna itu sudah dipakai. Coba yang lain.")
+		}
+	}
+	if req.HidePresence != nil {
+		if err := s.setHidePresence(r.Context(), p.UserID, *req.HidePresence); err != nil {
+			return err
 		}
 	}
 	return s.me(w, r)

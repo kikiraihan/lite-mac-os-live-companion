@@ -57,6 +57,8 @@ struct RemoteNudge: Codable {
 struct RemoteUser: Codable {
     let name: String
     let handle: String
+    /// "Sembunyikan status online-ku"; nil di server lama
+    let hide_presence: Bool?
 }
 
 struct SyncResponse: Codable {
@@ -214,6 +216,8 @@ final class Account {
     private var token: String? { Keychain.get(Account.tokenAccount) }
     var isLinked: Bool { token != nil }
     var userHandle: String { defaults.string(forKey: "accountHandle") ?? "" }
+    /// Teman selalu melihat akun ini offline (diatur di sini atau di web › Akun; nilai terakhir dari server)
+    var hidePresence: Bool { defaults.bool(forKey: "hidePresence") }
 
     private lazy var session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
@@ -367,6 +371,7 @@ final class Account {
         onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
         defaults.removeObject(forKey: "accountHandle")
+        defaults.removeObject(forKey: "hidePresence")
         defaults.removeObject(forKey: "roster")
         roster = []
         statusText = status
@@ -393,6 +398,7 @@ final class Account {
                 return
             }
             defaults.set(r.user.handle, forKey: "accountHandle")
+            if let h = r.user.hide_presence { defaults.set(h, forKey: "hidePresence") }
             self.statusText = "Terhubung sebagai @\(r.user.handle)"
             if let raw = try? JSONEncoder().encode(r.pets) { defaults.set(raw, forKey: "roster") }
             for p in r.pets where !p.mine { if let o = p.owner_id { self.friendNames[o] = p.owner_name } }
@@ -492,6 +498,15 @@ final class Account {
                 return done(nil, self?.errorText(data, code))
             }
             done(r.message, nil)
+        }
+    }
+
+    /// Sembunyikan / tampilkan status online akun ini dari teman. `done(nil)` = tersimpan, selain itu pesan galat.
+    func setHidePresence(_ hide: Bool, _ done: @escaping (String?) -> Void) {
+        send(request("/api/app/presence", method: "PUT", body: ["hidden": hide])) { [weak self] data, code in
+            guard code == 200 else { return done(self?.errorText(data, code) ?? "Gagal menyimpan.") }
+            defaults.set(hide, forKey: "hidePresence")
+            done(nil)
         }
     }
 
