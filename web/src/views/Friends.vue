@@ -133,6 +133,9 @@ async function unfriend() {
           <h2>
             {{ f.name }} <span class="handle">@{{ f.handle }}</span>
             <span v-if="f.online" class="tag ok presence" title="Temu sedang terbuka di Mac-nya">Online</span>
+            <!-- away: Temu terbuka tapi saluran real-time-nya tidak tersambung (server lama tidak mengirim presence) -->
+            <span v-else-if="f.presence === 'away'" class="tag warn presence"
+              title="Temu-nya terbuka, tapi sambungannya ke server sedang tersendat. Pesanmu tetap sampai.">Tersendat</span>
             <span v-else class="tag presence" title="Temu-nya sedang tertutup, atau statusnya disembunyikan">Offline</span>
           </h2>
           <div class="row small">

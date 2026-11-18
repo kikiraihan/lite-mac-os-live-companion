@@ -296,6 +296,75 @@ func TestPresence(t *testing.T) {
 	}
 }
 
+// TestPresenceAway: "away" = Temu terbuka (Mac-nya masih memanggil server) tapi saluran real-time-nya tidak
+// tersambung; beda dengan "offline" (Temu ditutup / disembunyikan).
+func TestPresenceAway(t *testing.T) {
+	s, ts := testServer(t, true)
+	s.live.grace = 50 * time.Millisecond
+	kiki, dina := register(t, ts, "kiki"), register(t, ts, "dina")
+	dinaID := userID(t, s, "dina")
+	inv := kiki.must(201, "POST", "/api/friends/invites", nil)
+	dina.must(200, "POST", "/api/invites/"+inv["code"].(string)+"/accept", nil)
+	kmac, dmac := linkMac(t, ts, kiki), linkMac(t, ts, dina)
+
+	presenceIn := func(sync map[string]any) string {
+		for _, f := range list(sync, "friends") {
+			if m := f.(map[string]any); m["id"] == dinaID {
+				return m["presence"].(string)
+			}
+		}
+		t.Fatal("Dina tidak ada di sync")
+		return ""
+	}
+	webPresence := func() string {
+		for _, f := range list(kiki.must(200, "GET", "/api/friends", nil), "friends") {
+			if m := f.(map[string]any); m["id"] == dinaID {
+				return m["presence"].(string)
+			}
+		}
+		t.Fatal("Dina tidak ada di /api/friends")
+		return ""
+	}
+	want := func(p, why string) {
+		t.Helper()
+		if got := presenceIn(kmac.must(200, "GET", "/api/app/sync", nil)); got != p {
+			t.Fatalf("%s: presence %q, mau %q", why, got, p)
+		}
+		if got := webPresence(); got != p {
+			t.Fatalf("web, %s: presence %q, mau %q", why, got, p)
+		}
+	}
+
+	want("offline", "Mac Dina belum pernah memanggil server")
+
+	// Temu Dina terbuka (sinkron jalan) tapi saluran real-time tidak pernah tersambung (mis. proxy menolak WebSocket)
+	dmac.must(200, "GET", "/api/app/sync", nil)
+	want("away", "sinkron tanpa saluran")
+
+	dws := dial(t, ts, dmac.bearer)
+	next(t, dws)
+	want("online", "saluran tersambung")
+
+	// Temu ditutup: saluran lepas dan Mac tidak memanggil apa-apa lagi → offline, bukan away
+	dws.Close(websocket.StatusNormalClosure, "")
+	time.Sleep(200 * time.Millisecond)
+	want("offline", "Temu ditutup")
+
+	// saluran putus tapi Mac masih sinkron → away
+	dmac.must(200, "GET", "/api/app/sync", nil)
+	want("away", "saluran putus, sinkron jalan")
+
+	// lama tidak memanggil server → offline lagi
+	s.live.away = 100 * time.Millisecond
+	time.Sleep(200 * time.Millisecond)
+	want("offline", "lewat batas away")
+	s.live.away = liveAway
+
+	// disembunyikan: away pun terlihat offline
+	dmac.must(200, "PUT", "/api/app/presence", map[string]any{"hidden": true})
+	want("offline", "status disembunyikan")
+}
+
 func TestReceipts(t *testing.T) {
 	s, ts := testServer(t, true)
 	kiki, dina := register(t, ts, "kiki"), register(t, ts, "dina")

@@ -1,6 +1,8 @@
 // Temu — popover menu bar (klik kiri ikon). Isinya langsung chat dengan teman:
 //   atas   : deretan teman (avatar = pet-nya), titik merah = pesan belum dibaca,
 //            titik kecil di pojok bawah avatar = hijau online / abu-abu offline (Temu terbuka di Mac-nya)
+//            / oranye tersendat (Temu-nya terbuka tapi sambungannya ke server bermasalah)
+//            / cincin kosong = belum bisa dicek (Mac INI yang tidak tersambung ke server)
 //   tengah : obrolan + kolom tulis (fokus otomatis, Return = kirim)
 //            pesanku: ✓ terkirim, ✓✓ diterima (sampai di Mac teman), ✓✓ biru dibaca
 //            tombol 🙂 membuka panel emoji bawaan (Unicode, font emoji sistem); ⌘C/⌘V/⌘A lewat MainMenu.swift
@@ -21,6 +23,18 @@ enum Brand {
     static let read = Color(red: 0.067, green: 0.341, blue: 0.788)      // #1157C9 centang "dibaca" (kontras di atas stroberi)
 }
 
+/// Status teman seperti yang terlihat dari Mac ini
+enum Presence: Equatable {
+    /// Temu terbuka & tersambung real-time di Mac-nya
+    case online
+    /// Temu-nya terbuka, tapi sambungan real-time-nya ke server tersendat (masalah jaringan / server di sisinya)
+    case away
+    /// Temu tertutup / Mac tidur, atau statusnya disembunyikan
+    case offline
+    /// Belum bisa dicek: Mac INI belum / tidak tersambung ke server (internet, alamat server, server bermasalah)
+    case unknown
+}
+
 /// Satu lawan bicara di deretan atas
 struct ChatFriend: Identifiable, Equatable {
     let id: String
@@ -29,11 +43,12 @@ struct ChatFriend: Identifiable, Equatable {
     let skin: Skin?
     let unread: Int
     /// Temu sedang terbuka di Mac-nya. false = offline atau belum diketahui (titik tetap tampil, abu-abu)
-    var online = false
+    var presence: Presence = .unknown
+    var online: Bool { presence == .online }
 
     static func == (a: ChatFriend, b: ChatFriend) -> Bool {
         a.id == b.id && a.name == b.name && a.handle == b.handle && a.unread == b.unread && (a.skin == nil) == (b.skin == nil)
-            && a.online == b.online
+            && a.presence == b.presence
     }
 }
 
@@ -76,6 +91,29 @@ final class PopoverModel: ObservableObject {
     var statusText: String { demo ? "Terhubung sebagai @kiki" : (app?.account.statusText ?? "") }
     var statusOK: Bool { demo || statusText.hasPrefix("Terhubung") }
     var liveOK: Bool { demo || (app?.account.liveConnected ?? false) }
+
+    /// Keterangan di bawah obrolan untuk teman yang tidak online. Tiga sebab dibedakan:
+    /// teman memang offline, Temu teman tersendat (masalah di sisinya), atau Mac INI yang tidak tersambung.
+    func presenceNote(_ f: ChatFriend) -> String? {
+        switch f.presence {
+        case .online:
+            return nil
+        case .offline:
+            return "\(f.name) sedang offline. Pesanmu tetap sampai saat Temu-nya dibuka lagi."
+        case .away:
+            return "Temu \(f.name) terbuka, tapi sambungannya ke server sedang tersendat. Pesanmu tetap sampai."
+        case .unknown:
+            switch app?.account.lastSyncCode {
+            case nil:
+                return "Sedang menyambung ke server… status \(f.name) belum bisa dicek."
+            case 0:
+                return "Mac ini tidak tersambung ke server, jadi status \(f.name) belum bisa dicek. " +
+                    "Cek internet atau alamat server di Pengaturan › Akun."
+            case let code?:
+                return "Server Temu sedang bermasalah (\(code)), jadi status \(f.name) belum bisa dicek. Coba lagi sebentar lagi."
+            }
+        }
+    }
     var linkCode: String? { demo ? nil : app?.account.linkCode }
     var updateVersion: String? {
         guard let u = app?.updater, u.hasUpdate else { return nil }
@@ -109,16 +147,21 @@ final class PopoverModel: ObservableObject {
         for p in app.stage.pets where !p.mine && !p.ownerID.isEmpty && skins[p.ownerID] == nil { skins[p.ownerID] = p.skin }
         // titik status selalu tampil: hijau = online, abu-abu = offline / belum diketahui.
         // Tanpa saluran real-time, status tetap ikut sinkron berkala (paling lama ±1 menit tertinggal).
-        let presence = { (id: String) -> Bool in acc.online.contains(id) }
+        // Mac ini tidak tersambung ke server → status teman "belum bisa dicek", bukan offline.
+        let presence = { (id: String) -> Presence in
+            if !acc.presenceKnown { return .unknown }
+            if acc.online.contains(id) { return .online }
+            return acc.away.contains(id) ? .away : .offline
+        }
         var list: [ChatFriend] = acc.friends.map {
             ChatFriend(id: $0.id, name: $0.name, handle: $0.handle, skin: skins[$0.id], unread: acc.unread[$0.id] ?? 0,
-                       online: presence($0.id))
+                       presence: presence($0.id))
         }
         // server lama tanpa daftar teman: pakai pemilik pet titipan + pengirim pesan
         var known = Set(list.map(\.id))
         for id in Array(skins.keys) + Array(acc.unread.keys) where !known.contains(id) {
             list.append(ChatFriend(id: id, name: acc.friendName(id), handle: "", skin: skins[id], unread: acc.unread[id] ?? 0,
-                                   online: presence(id)))
+                                   presence: presence(id)))
             known.insert(id)
         }
         // urutan tetap (tidak melompat saat pesan masuk): yang pet-nya tampil di Mac dulu, lalu nama
@@ -306,10 +349,10 @@ final class PopoverModel: ObservableObject {
         demo = true
         let sp = { (id: String) in Skin.builtin(Species.find(id)) }
         friends = [
-            ChatFriend(id: "d", name: "Dina", handle: "dina", skin: sp("kelinci"), unread: 0, online: true),
-            ChatFriend(id: "r", name: "Raka", handle: "raka", skin: sp("rubah"), unread: 2, online: true),
-            ChatFriend(id: "s", name: "Sari", handle: "sari", skin: sp("beruang"), unread: 0, online: false),
-            ChatFriend(id: "b", name: "Bima", handle: "bima", skin: nil, unread: 0, online: false),
+            ChatFriend(id: "d", name: "Dina", handle: "dina", skin: sp("kelinci"), unread: 0, presence: .online),
+            ChatFriend(id: "r", name: "Raka", handle: "raka", skin: sp("rubah"), unread: 2, presence: .away),
+            ChatFriend(id: "s", name: "Sari", handle: "sari", skin: sp("beruang"), unread: 0, presence: .offline),
+            ChatFriend(id: "b", name: "Bima", handle: "bima", skin: nil, unread: 0, presence: .offline),
         ]
         let now = Date()
         let iso = { (min: Double) in ISO8601DateFormatter().string(from: now.addingTimeInterval(-min * 60)) }
@@ -359,15 +402,26 @@ struct FriendAvatar: View {
     }
 }
 
-/// Titik status di pojok avatar: hijau = online, abu-abu = offline
+/// Titik status di pojok avatar: hijau = online, oranye = tersendat, abu-abu = offline,
+/// cincin kosong = belum bisa dicek (Mac ini tidak tersambung ke server)
 struct PresenceDot: View {
-    let online: Bool
+    let presence: Presence
 
     var body: some View {
         Circle()
-            .fill(online ? Brand.leaf : Color.gray)
+            .fill(fill)
+            .overlay(Circle().inset(by: 1.5).stroke(Color.gray, lineWidth: presence == .unknown ? 1.5 : 0))
             .frame(width: 10, height: 10)
             .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+    }
+
+    private var fill: Color {
+        switch presence {
+        case .online: return Brand.leaf
+        case .away: return Brand.orange
+        case .offline: return Color.gray
+        case .unknown: return Color(nsColor: .windowBackgroundColor)
+        }
     }
 }
 
@@ -583,7 +637,7 @@ struct PopoverView: View {
                                     }
                                 }
                                 .overlay(alignment: .bottomTrailing) {
-                                    PresenceDot(online: f.online).offset(x: 1, y: 1)
+                                    PresenceDot(presence: f.presence).offset(x: 1, y: 1)
                                 }
                             Text(f.name)
                                 .font(.system(size: 11, weight: on ? .semibold : .regular))
@@ -679,8 +733,12 @@ struct PopoverView: View {
     private func friendHelp(_ f: ChatFriend) -> String {
         var s = f.handle.isEmpty ? f.name : "\(f.name) · @\(f.handle)"
         if f.unread > 0 { s += " — \(f.unread) pesan baru" }
-        s += f.online ? "\nOnline — Temu sedang terbuka di Mac-nya."
-                      : "\nOffline — pesanmu tetap tersimpan dan terbaca saat Temu-nya dibuka lagi."
+        switch f.presence {
+        case .online: s += "\nOnline — Temu sedang terbuka di Mac-nya."
+        case .away: s += "\nTersendat — Temu-nya terbuka, tapi sambungannya ke server sedang bermasalah. Pesanmu tetap sampai."
+        case .offline: s += "\nOffline — pesanmu tetap tersimpan dan terbaca saat Temu-nya dibuka lagi."
+        case .unknown: s += "\nBelum bisa dicek — Mac ini sedang tidak tersambung ke server."
+        }
         if f.skin == nil { s += "\nPet-nya belum tampil di Mac ini. Minta pet-nya lewat web supaya bisa ⌘-klik di desktop." }
         return s
     }
@@ -705,8 +763,8 @@ struct PopoverView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 4)
-            } else if let f = model.current, !f.online {
-                Text("\(f.name) sedang offline. Pesanmu tetap sampai saat Temu-nya dibuka lagi.")
+            } else if let f = model.current, let note = model.presenceNote(f) {
+                Text(note)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
