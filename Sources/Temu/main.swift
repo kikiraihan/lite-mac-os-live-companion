@@ -302,6 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         account.isViewing = chat.isViewing
         account.onMessage = { [weak self] id, m in self?.chat.receive(id, m) }
         account.onPresence = { [weak self] in self?.chat.refresh() }
+        account.onReceipt = { [weak self] id, delivered, read in self?.chat.receipt(id, delivered: delivered, read: read) }
         account.onUnread = { [weak self] from in
             guard let self else { return }
             self.barKey = ""

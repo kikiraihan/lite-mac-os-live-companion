@@ -2,6 +2,7 @@
 //   atas   : deretan teman (avatar = pet-nya), titik merah = pesan belum dibaca,
 //            titik kecil di pojok bawah avatar = hijau online / abu-abu offline (Temu terbuka di Mac-nya)
 //   tengah : obrolan + kolom tulis (fokus otomatis, Return = kirim)
+//            pesanku: ✓ terkirim, ✓✓ diterima (sampai di Mac teman), ✓✓ biru dibaca
 //            tombol 🙂 membuka panel emoji bawaan (Unicode, font emoji sistem); ⌘C/⌘V/⌘A lewat MainMenu.swift
 //   bawah  : aksi pet (makan, bola, panggil, tampil/sembunyi) lalu status akun, web, pengaturan, keluar
 // Pengaturan › Pesan › "Sembunyikan obrolan": obrolan tertutup jadi satu baris "Obrolan" sampai diklik (privasi).
@@ -17,6 +18,7 @@ enum Brand {
     static let leaf = Color(red: 0.184, green: 0.620, blue: 0.467)      // #2F9E77 terhubung
     static let lemon = Color(red: 1.0, green: 0.824, blue: 0.235)       // #FFD23C sorotan, menunggu
     static let orange = Color(red: 0.969, green: 0.647, blue: 0.322)    // #F7A552 merek
+    static let read = Color(red: 0.067, green: 0.341, blue: 0.788)      // #1157C9 centang "dibaca" (kontras di atas stroberi)
 }
 
 /// Satu lawan bicara di deretan atas
@@ -192,11 +194,39 @@ final class PopoverModel: ObservableObject {
 
     private func merge(_ id: String, _ new: [ChatMessage]) {
         var list = threads[id] ?? []
-        let known = Set(list.map(\.id))
-        let add = new.filter { !known.contains($0.id) }
-        guard !add.isEmpty else { return }
-        list = (list + add).sorted { $0.id < $1.id }
+        var index: [Int: Int] = [:]
+        for (i, m) in list.enumerated() { index[m.id] = i }
+        var changed = false
+        var add: [ChatMessage] = []
+        for m in new {
+            if let i = index[m.id] {
+                // pesan yang sudah ada: status centang hanya boleh naik (data lama tidak menurunkannya)
+                if ChatMessage.rank(m.status) > ChatMessage.rank(list[i].status) {
+                    list[i].status = m.status
+                    changed = true
+                }
+            } else {
+                add.append(m)
+            }
+        }
+        guard changed || !add.isEmpty else { return }
+        if !add.isEmpty { list = (list + add).sorted { $0.id < $1.id } }
         threads[id] = list
+    }
+
+    /// Kabar "receipt": pesanku ke teman ini sampai id tertentu sudah diterima (✓✓) / dibaca (✓✓ biru)
+    func receipt(_ friend: String, delivered: Int?, read: Int?) {
+        guard var list = threads[friend] else { return } // obrolan belum dimuat: status ikut saat dimuat nanti
+        var changed = false
+        for i in list.indices where list[i].mine {
+            let id = list[i].id
+            let want = (read.map { id <= $0 } ?? false) ? "read" : (delivered.map { id <= $0 } ?? false) ? "delivered" : nil
+            if let want, ChatMessage.rank(want) > ChatMessage.rank(list[i].status) {
+                list[i].status = want
+                changed = true
+            }
+        }
+        if changed { threads[friend] = list }
     }
 
     func load(_ id: String) {
@@ -230,7 +260,8 @@ final class PopoverModel: ObservableObject {
         let text = draft(id).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         if demo {
-            merge(id, [ChatMessage(id: (threads[id]?.last?.id ?? 0) + 1, text: text, created_at: ISO8601DateFormatter().string(from: Date()), mine: true)])
+            merge(id, [ChatMessage(id: (threads[id]?.last?.id ?? 0) + 1, text: text, created_at: ISO8601DateFormatter().string(from: Date()), mine: true,
+                                   status: "sent")])
             drafts[id] = ""
             return
         }
@@ -283,10 +314,13 @@ final class PopoverModel: ObservableObject {
         let iso = { (min: Double) in ISO8601DateFormatter().string(from: now.addingTimeInterval(-min * 60)) }
         threads["d"] = [
             ChatMessage(id: 1, text: "Pagi! Pet-mu barusan nyasar ke pojok layarku 😄", created_at: iso(1500), mine: false),
-            ChatMessage(id: 2, text: "Hahaha dia memang suka jalan-jalan", created_at: iso(1490), mine: true),
+            ChatMessage(id: 2, text: "Hahaha dia memang suka jalan-jalan", created_at: iso(1490), mine: true, status: "read"),
             ChatMessage(id: 3, text: "Nanti malam jadi video call?", created_at: iso(42), mine: false),
-            ChatMessage(id: 4, text: "Jadi dong. Jam 8 ya", created_at: iso(40), mine: true),
+            ChatMessage(id: 4, text: "Jadi dong. Jam 8 ya", created_at: iso(40), mine: true, status: "read"),
             ChatMessage(id: 5, text: "Oke, sampai nanti 💛", created_at: iso(3), mine: false),
+            // contoh status centang untuk tangkapan layar: ✓✓ diterima lalu ✓ terkirim
+            ChatMessage(id: 6, text: "Aku bawa camilan ya", created_at: iso(2), mine: true, status: "delivered"),
+            ChatMessage(id: 7, text: "Sampai jam 8!", created_at: iso(1), mine: true, status: "sent"),
         ]
         threads["r"] = []
         hasMore = ["d": false, "r": false]
@@ -333,6 +367,33 @@ struct PresenceDot: View {
             .fill(online ? Brand.leaf : Color.gray)
             .frame(width: 10, height: 10)
             .overlay(Circle().stroke(Color(nsColor: .windowBackgroundColor), lineWidth: 2))
+    }
+}
+
+/// Status pesanku seperti WhatsApp: ✓ terkirim, ✓✓ diterima, ✓✓ biru dibaca
+struct ReceiptTicks: View {
+    let status: String
+
+    var body: some View {
+        let read = status == "read"
+        ZStack(alignment: .leading) {
+            Image(systemName: "checkmark")
+            if status == "delivered" || read { Image(systemName: "checkmark").offset(x: 4) }
+        }
+        .font(.system(size: 9, weight: .bold))
+        .foregroundStyle(read ? Brand.read : Brand.ink.opacity(0.55))
+        .frame(width: 14, alignment: .leading)
+        .accessibilityLabel(ReceiptTicks.label(status))
+    }
+
+    /// Keterangan untuk tooltip (diawali " · " supaya bisa disambung ke jam)
+    static func label(_ status: String?) -> String {
+        switch status {
+        case "read": return " · Dibaca"
+        case "delivered": return " · Diterima"
+        case "sent": return " · Terkirim"
+        default: return ""
+        }
     }
 }
 
@@ -708,10 +769,13 @@ struct PopoverView: View {
     }
 
     private func bubble(_ m: ChatMessage, tail: Bool) -> some View {
-        Text(m.text)
-            .font(.system(size: 13))
-            .foregroundStyle(m.mine ? Brand.ink : Color.primary)
-            .textSelection(.enabled)
+        HStack(alignment: .lastTextBaseline, spacing: 5) {
+            Text(m.text)
+                .font(.system(size: 13))
+                .foregroundStyle(m.mine ? Brand.ink : Color.primary)
+                .textSelection(.enabled)
+            if m.mine, let status = m.status { ReceiptTicks(status: status) }
+        }
             .padding(.horizontal, 11)
             .padding(.vertical, 6)
             .background(
@@ -721,7 +785,7 @@ struct PopoverView: View {
             .frame(maxWidth: 250, alignment: m.mine ? .trailing : .leading)
             .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
             .padding(.bottom, tail ? 6 : 0)
-            .help(PopoverView.timeFormat.string(from: m.date))
+            .help(PopoverView.timeFormat.string(from: m.date) + (m.mine ? ReceiptTicks.label(m.status) : ""))
             .contextMenu {
                 Button("Salin pesan") {
                     NSPasteboard.general.clearContents()

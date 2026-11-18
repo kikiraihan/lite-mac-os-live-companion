@@ -239,6 +239,8 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 	if err := nrows.Err(); err != nil {
 		return err
 	}
+	// Mac ini sinkron → pesan yang menunggu sudah sampai (penting kalau saluran real-time tidak tersambung)
+	s.markDelivered(r.Context(), p.UserID, "")
 	unread, err := s.unreadCounts(r.Context(), p.UserID)
 	if err != nil {
 		return err

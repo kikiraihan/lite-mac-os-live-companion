@@ -19,6 +19,8 @@ import (
 //	{"type":"read",    "friend_id":…}                                   percakapan sudah dibaca (di Mac mana pun)
 //	{"type":"nudge"}                                                    ada sapaan → aplikasi sinkron sekarang
 //	{"type":"presence","friend_id":…, "online":true}                    teman membuka / menutup Temu di Mac-nya
+//	{"type":"receipt", "friend_id":…, "delivered_upto":12, "read_upto":10}  pesanku ke teman ini sampai id itu
+//	                                                                    sudah diterima / dibaca (salah satu boleh tidak ada)
 //
 // "hello" juga membawa "online_friends": [id teman yang sedang online]. Online = minimal satu Mac milik
 // akun itu tersambung ke saluran ini (web tidak dihitung) dan pemiliknya tidak menyembunyikan statusnya
@@ -91,21 +93,23 @@ func (h *hub) online(user string) bool {
 }
 
 // publish mengirim kabar ke semua Mac milik user. Koneksi yang antreannya penuh diputus
-// (aplikasi menyambung ulang lalu mengambil data terbaru).
-func (h *hub) publish(user string, v any) {
+// (aplikasi menyambung ulang lalu mengambil data terbaru). Hasilnya = jumlah Mac yang menerima kabar.
+func (h *hub) publish(user string, v any) (sent int) {
 	b, err := json.Marshal(v)
 	if err != nil {
-		return
+		return 0
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for c := range h.users[user] {
 		select {
 		case c.send <- b:
+			sent++
 		default:
 			c.close()
 		}
 	}
+	return sent
 }
 
 // dropDevice / dropUser: putuskan saluran saat token dicabut atau akun dinonaktifkan.
@@ -252,6 +256,8 @@ func (s *Server) appLive(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 	}
+	// Mac ini tersambung → semua pesan yang menunggu sudah sampai (✓✓ di Mac pengirim)
+	s.markDelivered(ctx, p.UserID, "")
 	hello, _ := json.Marshal(map[string]any{"type": "hello", "unread": unread, "online_friends": onlineFriends})
 	if !write(hello) {
 		return nil

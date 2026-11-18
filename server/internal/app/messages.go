@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"database/sql"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +14,12 @@ import (
 
 // Pesan antar teman dari aplikasi Mac (⌘-klik pet teman). Hanya lewat token perangkat (/api/app/*),
 // dan hanya antara dua orang yang berteman. Kabar real-time dikirim lewat hub (live.go).
+//
+// Status pesan (hanya untuk pesanku sendiri, "status" di JSON), seperti WhatsApp:
+//   sent      ✓        tersimpan di server
+//   delivered ✓✓       sudah sampai di Mac penerima (lewat saluran real-time, sync, atau saat memuat obrolan)
+//   read      ✓✓ biru  penerima sudah membuka obrolannya
+// Perubahan status dikirim ke Mac pengirim sebagai kabar "receipt".
 
 const maxMessage = 1000 // karakter
 
@@ -40,6 +48,44 @@ func messageJSON(id int64, text string, at time.Time, mine bool) map[string]any 
 	return map[string]any{"id": id, "text": text, "created_at": at, "mine": mine}
 }
 
+// myMessageJSON: pesanku sendiri + statusnya (sent / delivered / read)
+func myMessageJSON(id int64, text string, at time.Time, status string) map[string]any {
+	m := messageJSON(id, text, at, true)
+	m["status"] = status
+	return m
+}
+
+func messageStatus(delivered, read sql.NullTime) string {
+	switch {
+	case read.Valid:
+		return "read"
+	case delivered.Valid:
+		return "delivered"
+	}
+	return "sent"
+}
+
+// markDelivered: pesan untuk `me` (dari `from`, atau dari siapa pun kalau kosong) yang belum diterima
+// ditandai diterima, lalu Mac pengirimnya diberi kabar "receipt".
+func (s *Server) markDelivered(ctx context.Context, me, from string) {
+	rows, err := s.DB.QueryContext(ctx, `WITH u AS (
+			UPDATE messages SET delivered_at=now() WHERE to_user=$1 AND delivered_at IS NULL
+				AND ($2 = '' OR from_user::text = $2) RETURNING from_user, id)
+		SELECT from_user, max(id) FROM u GROUP BY from_user`, me, from)
+	if err != nil {
+		log.Printf("pesan: diterima %v", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sender string
+		var upto int64
+		if rows.Scan(&sender, &upto) == nil {
+			s.live.publish(sender, map[string]any{"type": "receipt", "friend_id": me, "delivered_upto": upto})
+		}
+	}
+}
+
 // appMessages: 50 pesan terakhir (urut lama → baru); ?before=<id> untuk yang lebih lama.
 func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 	friend, name, err := s.chatFriend(r)
@@ -48,7 +94,8 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 	}
 	me := who(r).UserID
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
-	rows, err := s.DB.QueryContext(r.Context(), `SELECT id, from_user, text, created_at FROM messages
+	s.markDelivered(r.Context(), me, friend) // obrolan dibuka di Mac ini → pesan dari teman sudah sampai
+	rows, err := s.DB.QueryContext(r.Context(), `SELECT id, from_user, text, created_at, delivered_at, read_at FROM messages
 		WHERE LEAST(from_user, to_user)=LEAST($1::uuid, $2::uuid) AND GREATEST(from_user, to_user)=GREATEST($1::uuid, $2::uuid)
 		AND ($3::bigint = 0 OR id < $3) ORDER BY id DESC LIMIT 51`, me, friend, before)
 	if err != nil {
@@ -60,10 +107,15 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 		var id int64
 		var from, text string
 		var at time.Time
-		if err := rows.Scan(&id, &from, &text, &at); err != nil {
+		var delivered, read sql.NullTime
+		if err := rows.Scan(&id, &from, &text, &at, &delivered, &read); err != nil {
 			return err
 		}
-		out = append(out, messageJSON(id, text, at, from == me))
+		if from == me {
+			out = append(out, myMessageJSON(id, text, at, messageStatus(delivered, read)))
+		} else {
+			out = append(out, messageJSON(id, text, at, false))
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return err
@@ -108,10 +160,17 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	// ke teman (semua Mac-nya) dan ke Mac lain milik pengirim, supaya jendela chat di sana ikut bertambah
-	s.live.publish(friend, map[string]any{"type": "message", "friend_id": p.UserID, "friend_name": p.Name,
-		"message": messageJSON(id, text, at, false)})
-	s.live.publish(p.UserID, map[string]any{"type": "message", "friend_id": friend, "message": messageJSON(id, text, at, true)})
-	httpx.JSON(w, 201, map[string]any{"message": messageJSON(id, text, at, true)})
+	status := "sent"
+	if s.live.publish(friend, map[string]any{"type": "message", "friend_id": p.UserID, "friend_name": p.Name,
+		"message": messageJSON(id, text, at, false)}) > 0 {
+		// minimal satu Mac teman sedang tersambung dan menerimanya → langsung ✓✓
+		if _, err := s.DB.ExecContext(r.Context(), `UPDATE messages SET delivered_at=now() WHERE id=$1`, id); err == nil {
+			status = "delivered"
+		}
+	}
+	mine := myMessageJSON(id, text, at, status)
+	s.live.publish(p.UserID, map[string]any{"type": "message", "friend_id": friend, "message": mine})
+	httpx.JSON(w, 201, map[string]any{"message": mine})
 	return nil
 }
 
@@ -122,12 +181,18 @@ func (s *Server) appReadMessages(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	me := who(r).UserID
-	res, err := s.DB.ExecContext(r.Context(), `UPDATE messages SET read_at=now() WHERE to_user=$1 AND from_user=$2 AND read_at IS NULL`, me, friend)
+	var upto sql.NullInt64
+	err = s.DB.QueryRowContext(r.Context(), `WITH u AS (
+			UPDATE messages SET read_at=now(), delivered_at=COALESCE(delivered_at, now())
+				WHERE to_user=$1 AND from_user=$2 AND read_at IS NULL RETURNING id)
+		SELECT max(id) FROM u`, me, friend).Scan(&upto)
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
+	if upto.Valid {
 		s.live.publish(me, map[string]any{"type": "read", "friend_id": friend})
+		// Mac teman: pesannya ke aku sudah dibaca (✓✓ biru)
+		s.live.publish(friend, map[string]any{"type": "receipt", "friend_id": me, "delivered_upto": upto.Int64, "read_upto": upto.Int64})
 	}
 	httpx.JSON(w, 200, map[string]any{"ok": true})
 	return nil

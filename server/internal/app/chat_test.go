@@ -144,7 +144,12 @@ func TestChat(t *testing.T) {
 	dina.must(200, "DELETE", "/api/devices/"+devs[0].(map[string]any)["id"].(string), nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, _, err := dws.Read(ctx); websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
+	// kabar yang masih antre (mis. "receipt" saat Kiki memuat obrolan) dilewati sampai sambungan ditutup
+	var err error
+	for err == nil {
+		_, _, err = dws.Read(ctx)
+	}
+	if websocket.CloseStatus(err) != websocket.StatusPolicyViolation {
 		t.Fatalf("ws tidak diputus: %v", err)
 	}
 
@@ -288,5 +293,92 @@ func TestPresence(t *testing.T) {
 	defer cancel()
 	if _, b, err := rws.Read(ctx); err == nil {
 		t.Fatalf("Raka menerima kabar: %s", b)
+	}
+}
+
+func TestReceipts(t *testing.T) {
+	s, ts := testServer(t, true)
+	kiki, dina := register(t, ts, "kiki"), register(t, ts, "dina")
+	kikiID, dinaID := userID(t, s, "kiki"), userID(t, s, "dina")
+	inv := kiki.must(201, "POST", "/api/friends/invites", nil)
+	dina.must(200, "POST", "/api/invites/"+inv["code"].(string)+"/accept", nil)
+	kmac, dmac := linkMac(t, ts, kiki), linkMac(t, ts, dina)
+
+	kws := dial(t, ts, kmac.bearer)
+	next(t, kws) // hello
+
+	status := func(c *client, friend string, id float64) string {
+		t.Helper()
+		for _, m := range list(c.must(200, "GET", "/api/app/messages/"+friend, nil), "messages") {
+			if m := m.(map[string]any); m["id"] == id {
+				return fmt.Sprint(m["status"])
+			}
+		}
+		t.Fatalf("pesan %v tidak ada", id)
+		return ""
+	}
+	// receipt: kabar berikutnya di saluran Kiki (lewati salinan pesannya sendiri)
+	receipt := func() map[string]any {
+		t.Helper()
+		for {
+			ev := next(t, kws)
+			if ev["type"] == "receipt" {
+				return ev
+			}
+		}
+	}
+
+	// Dina belum membuka Temu → ✓ (sent)
+	m1 := kmac.must(201, "POST", "/api/app/messages/"+dinaID, map[string]any{"text": "halo"})["message"].(map[string]any)
+	if m1["status"] != "sent" {
+		t.Fatalf("status awal: %v", m1)
+	}
+	id1 := m1["id"].(float64)
+
+	// Mac Dina tersambung → pesan diterima, Kiki mendapat kabar ✓✓
+	dws := dial(t, ts, dmac.bearer)
+	next(t, dws)
+	if ev := receipt(); ev["friend_id"] != dinaID || ev["delivered_upto"] != id1 || ev["read_upto"] != nil {
+		t.Fatalf("kabar diterima: %v", ev)
+	}
+	if st := status(kmac, dinaID, id1); st != "delivered" {
+		t.Fatalf("status setelah diterima: %s", st)
+	}
+
+	// Dina sedang tersambung → pesan berikutnya langsung ✓✓
+	m2 := kmac.must(201, "POST", "/api/app/messages/"+dinaID, map[string]any{"text": "lagi apa?"})["message"].(map[string]any)
+	if m2["status"] != "delivered" {
+		t.Fatalf("status saat Dina online: %v", m2)
+	}
+	id2 := m2["id"].(float64)
+
+	// Dina membaca → ✓✓ biru untuk semua pesan sampai id2
+	dmac.must(200, "POST", "/api/app/messages/"+kikiID+"/read", nil)
+	if ev := receipt(); ev["friend_id"] != dinaID || ev["read_upto"] != id2 || ev["delivered_upto"] != id2 {
+		t.Fatalf("kabar dibaca: %v", ev)
+	}
+	if status(kmac, dinaID, id1) != "read" || status(kmac, dinaID, id2) != "read" {
+		t.Fatal("status belum dibaca")
+	}
+	// pesan dari teman tidak punya status (hanya pesanku sendiri)
+	for _, m := range list(dmac.must(200, "GET", "/api/app/messages/"+kikiID, nil), "messages") {
+		if _, ok := m.(map[string]any)["status"]; ok {
+			t.Fatalf("pesan masuk berstatus: %v", m)
+		}
+	}
+
+	// Dina offline: pesan menunggu (✓), lalu sampai lewat sync tanpa saluran real-time (✓✓)
+	dws.Close(websocket.StatusNormalClosure, "")
+	time.Sleep(100 * time.Millisecond)
+	m3 := kmac.must(201, "POST", "/api/app/messages/"+dinaID, map[string]any{"text": "tidur ya?"})["message"].(map[string]any)
+	if m3["status"] != "sent" {
+		t.Fatalf("status saat Dina offline: %v", m3)
+	}
+	dmac.must(200, "GET", "/api/app/sync", nil)
+	if ev := receipt(); ev["delivered_upto"] != m3["id"] {
+		t.Fatalf("kabar diterima lewat sync: %v", ev)
+	}
+	if st := status(kmac, dinaID, m3["id"].(float64)); st != "delivered" {
+		t.Fatalf("status lewat sync: %s", st)
 	}
 }
