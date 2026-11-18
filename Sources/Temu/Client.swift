@@ -183,6 +183,8 @@ final class Account {
     private(set) var friends: [RemoteFriend] = []
     /// id teman yang sedang online (Temu terbuka di Mac-nya); dari sync dan saluran real-time, tidak dari cache
     private(set) var online: Set<String> = []
+    /// Server sudah mengirim status online (server lama tidak) → tanpa ini semua teman akan tampak offline
+    private(set) var presenceKnown = false
     var unreadTotal: Int { unread.values.reduce(0, +) }
     /// Saluran real-time sedang tersambung (kalau tidak, jendela chat menyegarkan sendiri berkala)
     private(set) var liveConnected = false
@@ -367,6 +369,7 @@ final class Account {
         friendNames = [:]
         friends = []
         online = []
+        presenceKnown = false
         defaults.removeObject(forKey: "friends")
         onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
@@ -405,6 +408,7 @@ final class Account {
             if let f = r.friends {
                 self.friends = f
                 for x in f { self.friendNames[x.id] = x.name }
+                if f.contains(where: { $0.online != nil }) { self.presenceKnown = true }
                 self.setOnline(Set(f.filter { $0.online == true }.map(\.id)))
                 if let raw = try? JSONEncoder().encode(f) { defaults.set(raw, forKey: "friends") }
             }
@@ -614,7 +618,10 @@ final class Account {
             liveConnected = true
             liveRetry = 2
             applyUnread(ev.unread ?? [])
-            if let o = ev.online_friends { online = Set(o) }
+            if let o = ev.online_friends {
+                online = Set(o)
+                presenceKnown = true
+            }
             onPresence?() // status teman kembali bisa dipercaya → titiknya muncul lagi
         case "message":
             guard let friend = ev.friend_id, let m = ev.message else { return }
