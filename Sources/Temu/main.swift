@@ -301,6 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         stage.onChat = { [weak self] p in self?.openChat(p.ownerID) }
         account.isViewing = chat.isViewing
         account.onMessage = { [weak self] id, m in self?.chat.receive(id, m) }
+        account.onPresence = { [weak self] in self?.chat.refresh() }
         account.onUnread = { [weak self] from in
             guard let self else { return }
             self.barKey = ""

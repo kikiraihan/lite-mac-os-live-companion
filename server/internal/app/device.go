@@ -256,7 +256,8 @@ func (s *Server) appSync(w http.ResponseWriter, r *http.Request) error {
 		if err := frows.Scan(&id, &name, &handle); err != nil {
 			return err
 		}
-		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle})
+		// online = Temu sedang terbuka & tersambung di minimal satu Mac milik teman itu (live.go)
+		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "online": s.live.online(id)})
 	}
 	if err := frows.Err(); err != nil {
 		return err
