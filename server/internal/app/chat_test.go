@@ -152,3 +152,72 @@ func TestChat(t *testing.T) {
 	kiki.must(200, "DELETE", "/api/friends/"+dinaID, nil)
 	kmac.must(404, "POST", "/api/app/messages/"+dinaID, map[string]any{"text": "masih di sana?"})
 }
+
+func TestPresence(t *testing.T) {
+	s, ts := testServer(t, true)
+	s.live.grace = 50 * time.Millisecond // sebelum ada koneksi
+	kiki, dina, raka := register(t, ts, "kiki"), register(t, ts, "dina"), register(t, ts, "raka")
+	kikiID, dinaID := userID(t, s, "kiki"), userID(t, s, "dina")
+	inv := kiki.must(201, "POST", "/api/friends/invites", nil)
+	dina.must(200, "POST", "/api/invites/"+inv["code"].(string)+"/accept", nil)
+	kmac, dmac, rmac := linkMac(t, ts, kiki), linkMac(t, ts, dina), linkMac(t, ts, raka)
+
+	onlineIn := func(sync map[string]any, id string) bool {
+		for _, f := range list(sync, "friends") {
+			if m := f.(map[string]any); m["id"] == id {
+				return m["online"] == true
+			}
+		}
+		t.Fatalf("teman %s tidak ada di sync", id)
+		return false
+	}
+
+	// Dina belum membuka saluran → offline di mata Kiki
+	if onlineIn(kmac.must(200, "GET", "/api/app/sync", nil), dinaID) {
+		t.Fatal("Dina online padahal belum tersambung")
+	}
+
+	kws := dial(t, ts, kmac.bearer)
+	if h := next(t, kws); h["type"] != "hello" || len(h["online_friends"].([]any)) != 0 {
+		t.Fatalf("hello Kiki: %v", h)
+	}
+	rws := dial(t, ts, rmac.bearer) // Raka bukan teman: tidak boleh mendapat kabar Dina
+	next(t, rws)
+
+	// Dina tersambung → Kiki mendapat kabar online, dan hello Dina menyebut Kiki online
+	dws := dial(t, ts, dmac.bearer)
+	if h := next(t, dws); len(h["online_friends"].([]any)) != 1 || h["online_friends"].([]any)[0] != kikiID {
+		t.Fatalf("hello Dina: %v", h)
+	}
+	if ev := next(t, kws); ev["type"] != "presence" || ev["friend_id"] != dinaID || ev["online"] != true {
+		t.Fatalf("kabar online: %v", ev)
+	}
+	if !onlineIn(kmac.must(200, "GET", "/api/app/sync", nil), dinaID) {
+		t.Fatal("Dina tidak online di sync")
+	}
+
+	// Mac kedua Dina tidak memberi kabar ulang; menutup satu Mac tidak membuat Dina offline
+	dws2 := dial(t, ts, dmac.bearer)
+	next(t, dws2)
+	dws2.Close(websocket.StatusNormalClosure, "")
+	time.Sleep(200 * time.Millisecond)
+	if !onlineIn(kmac.must(200, "GET", "/api/app/sync", nil), dinaID) {
+		t.Fatal("Dina offline padahal satu Mac masih tersambung")
+	}
+
+	// Mac terakhir ditutup → setelah jeda, Kiki mendapat kabar offline
+	dws.Close(websocket.StatusNormalClosure, "")
+	if ev := next(t, kws); ev["type"] != "presence" || ev["friend_id"] != dinaID || ev["online"] != false {
+		t.Fatalf("kabar offline: %v", ev)
+	}
+	if onlineIn(kmac.must(200, "GET", "/api/app/sync", nil), dinaID) {
+		t.Fatal("Dina masih online di sync")
+	}
+
+	// Raka tidak menerima kabar apa pun
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if _, b, err := rws.Read(ctx); err == nil {
+		t.Fatalf("Raka menerima kabar: %s", b)
+	}
+}

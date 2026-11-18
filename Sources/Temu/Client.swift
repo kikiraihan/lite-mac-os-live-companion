@@ -73,6 +73,8 @@ struct RemoteFriend: Codable {
     let id: String
     let name: String
     let handle: String
+    /// Temu sedang terbuka di minimal satu Mac milik teman ini; nil di server lama
+    let online: Bool?
 }
 
 /// Pesan belum dibaca dari satu teman
@@ -119,6 +121,10 @@ private struct LiveEvent: Codable {
     let friend_name: String?
     let message: ChatMessage?
     let unread: [UnreadEntry]?
+    /// "presence": teman online / offline
+    let online: Bool?
+    /// "hello": id teman yang sedang online
+    let online_friends: [String]?
 }
 
 private struct LinkStart: Codable {
@@ -160,6 +166,8 @@ final class Account {
     var onUnread: ((String?) -> Void)?
     /// Apakah percakapan dengan teman ini sedang dibaca (jendela chat-nya aktif)
     var isViewing: ((String) -> Bool)?
+    /// Status online teman berubah
+    var onPresence: (() -> Void)?
 
     /// Isi pesan masuk terakhir per teman (dari saluran real-time), diambil sekali untuk balon kata pet
     private var lastIncoming: [String: String] = [:]
@@ -171,6 +179,8 @@ final class Account {
     private(set) var friendNames: [String: String] = [:]
     /// Semua teman akun ini (dari sync, disimpan supaya popover langsung terisi saat offline)
     private(set) var friends: [RemoteFriend] = []
+    /// id teman yang sedang online (Temu terbuka di Mac-nya); dari sync dan saluran real-time, tidak dari cache
+    private(set) var online: Set<String> = []
     var unreadTotal: Int { unread.values.reduce(0, +) }
     /// Saluran real-time sedang tersambung (kalau tidak, jendela chat menyegarkan sendiri berkala)
     private(set) var liveConnected = false
@@ -352,6 +362,7 @@ final class Account {
         unread = [:]
         friendNames = [:]
         friends = []
+        online = []
         defaults.removeObject(forKey: "friends")
         onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
@@ -388,6 +399,7 @@ final class Account {
             if let f = r.friends {
                 self.friends = f
                 for x in f { self.friendNames[x.id] = x.name }
+                self.setOnline(Set(f.filter { $0.online == true }.map(\.id)))
                 if let raw = try? JSONEncoder().encode(f) { defaults.set(raw, forKey: "friends") }
             }
             if let u = r.unread { self.applyUnread(u) }
@@ -570,6 +582,7 @@ final class Account {
         liveTask?.cancel()
         liveTask = nil
         liveConnected = false
+        onPresence?() // status teman tidak diketahui sampai tersambung lagi
         guard isLinked else { return }
         if code == 401 { return sync(force: true) } // token dicabut → sync yang memutuskan akun
         let wait = liveRetry + Double.random(in: 0...1)
@@ -586,6 +599,8 @@ final class Account {
             liveConnected = true
             liveRetry = 2
             applyUnread(ev.unread ?? [])
+            if let o = ev.online_friends { online = Set(o) }
+            onPresence?() // status teman kembali bisa dipercaya → titiknya muncul lagi
         case "message":
             guard let friend = ev.friend_id, let m = ev.message else { return }
             if let n = ev.friend_name, !n.isEmpty { friendNames[friend] = n }
@@ -599,9 +614,20 @@ final class Account {
             if let friend = ev.friend_id, unread.removeValue(forKey: friend) != nil { onUnread?(nil) }
         case "nudge":
             sync(force: true)
+        case "presence":
+            guard let friend = ev.friend_id, let on = ev.online else { return }
+            var next = online
+            if on { next.insert(friend) } else { next.remove(friend) }
+            setOnline(next)
         default:
             break
         }
+    }
+
+    private func setOnline(_ next: Set<String>) {
+        guard next != online else { return }
+        online = next
+        onPresence?()
     }
 
     /// Hapus semua data akun di Mac ini (dipakai saat uninstall)
