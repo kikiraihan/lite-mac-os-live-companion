@@ -21,7 +21,8 @@ import (
 //	{"type":"presence","friend_id":…, "online":true}                    teman membuka / menutup Temu di Mac-nya
 //
 // "hello" juga membawa "online_friends": [id teman yang sedang online]. Online = minimal satu Mac milik
-// akun itu tersambung ke saluran ini (web tidak dihitung). Kabar offline ditunda liveGrace supaya Mac yang
+// akun itu tersambung ke saluran ini (web tidak dihitung) dan pemiliknya tidak menyembunyikan statusnya
+// (users.hide_presence, diatur di web › Akun atau Pengaturan aplikasi Mac). Kabar offline ditunda liveGrace supaya Mac yang
 // hanya menyambung ulang (bangun dari tidur, ganti Wi-Fi) tidak membuat statusnya berkedip.
 //
 // Hub disimpan di memori: cukup untuk satu proses server (seperti deploy saat ini).
@@ -128,39 +129,77 @@ func (h *hub) dropUser(user string) {
 	}
 }
 
-// friendIDs: id semua teman aktif milik user (untuk kabar kehadiran)
-func (s *Server) friendIDs(ctx context.Context, user string) ([]string, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT u.id FROM friendships f
+// friendRef: satu teman aktif + apakah ia menyembunyikan status online-nya
+type friendRef struct {
+	id     string
+	hidden bool
+}
+
+// friends: semua teman aktif milik user (untuk kabar kehadiran)
+func (s *Server) friends(ctx context.Context, user string) ([]friendRef, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT u.id, u.hide_presence FROM friendships f
 		JOIN users u ON u.id = CASE WHEN f.user_a=$1 THEN f.user_b ELSE f.user_a END
 		WHERE (f.user_a=$1 OR f.user_b=$1) AND u.disabled_at IS NULL`, user)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var ids []string
+	var out []friendRef
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
+		var f friendRef
+		if err := rows.Scan(&f.id, &f.hidden); err != nil {
 			return nil, err
 		}
-		ids = append(ids, id)
+		out = append(out, f)
 	}
-	return ids, rows.Err()
+	return out, rows.Err()
 }
 
+// seenOnline: status online user seperti yang boleh dilihat temannya
+func (s *Server) seenOnline(user string, hidden bool) bool { return !hidden && s.live.online(user) }
+
 // announcePresence memberi tahu Mac teman-teman bahwa user online / offline.
-// Hanya teman yang menerima kabar ini (sama seperti pet dan pesan).
+// Hanya teman yang menerima kabar ini (sama seperti pet dan pesan). Status yang disembunyikan tidak
+// diumumkan (teman tetap melihatnya offline).
 func (s *Server) announcePresence(user string, online bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	ids, err := s.friendIDs(ctx, user)
+	var hidden bool
+	if err := s.DB.QueryRowContext(ctx, `SELECT hide_presence FROM users WHERE id=$1`, user).Scan(&hidden); err != nil || hidden {
+		return
+	}
+	s.broadcastPresence(ctx, user, online)
+}
+
+// broadcastPresence mengirim kabar online / offline user ke semua Mac temannya (tanpa memeriksa hide_presence)
+func (s *Server) broadcastPresence(ctx context.Context, user string, online bool) {
+	fs, err := s.friends(ctx, user)
 	if err != nil {
 		log.Printf("live: presence %v", err)
 		return
 	}
-	for _, id := range ids {
-		s.live.publish(id, map[string]any{"type": "presence", "friend_id": user, "online": online})
+	for _, f := range fs {
+		s.live.publish(f.id, map[string]any{"type": "presence", "friend_id": user, "online": online})
 	}
+}
+
+// setHidePresence menyimpan pilihan "sembunyikan status online-ku" dan langsung memberi tahu teman
+// kalau statusnya yang terlihat berubah (sedang online → tampak offline, atau sebaliknya).
+func (s *Server) setHidePresence(ctx context.Context, user string, hide bool) error {
+	var was bool
+	err := s.DB.QueryRowContext(ctx, `UPDATE users u SET hide_presence=$2 FROM users old
+		WHERE u.id=$1 AND old.id=u.id RETURNING old.hide_presence`, user, hide).Scan(&was)
+	if err != nil {
+		return err
+	}
+	if was != hide && s.live.online(user) {
+		go func() {
+			bctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			s.broadcastPresence(bctx, user, !hide)
+		}()
+	}
+	return nil
 }
 
 func (s *Server) appLive(w http.ResponseWriter, r *http.Request) error {
@@ -204,12 +243,12 @@ func (s *Server) appLive(w http.ResponseWriter, r *http.Request) error {
 		unread = []map[string]any{}
 	}
 	onlineFriends := []string{}
-	if ids, err := s.friendIDs(ctx, p.UserID); err != nil {
+	if fs, err := s.friends(ctx, p.UserID); err != nil {
 		log.Printf("live: teman %v", err)
 	} else {
-		for _, id := range ids {
-			if s.live.online(id) {
-				onlineFriends = append(onlineFriends, id)
+		for _, f := range fs {
+			if s.seenOnline(f.id, f.hidden) {
+				onlineFriends = append(onlineFriends, f.id)
 			}
 		}
 	}

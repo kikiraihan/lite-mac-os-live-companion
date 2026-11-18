@@ -57,6 +57,8 @@ struct RemoteNudge: Codable {
 struct RemoteUser: Codable {
     let name: String
     let handle: String
+    /// "Sembunyikan status online-ku"; nil di server lama
+    let hide_presence: Bool?
 }
 
 struct SyncResponse: Codable {
@@ -181,6 +183,8 @@ final class Account {
     private(set) var friends: [RemoteFriend] = []
     /// id teman yang sedang online (Temu terbuka di Mac-nya); dari sync dan saluran real-time, tidak dari cache
     private(set) var online: Set<String> = []
+    /// Server sudah mengirim status online (server lama tidak) → tanpa ini semua teman akan tampak offline
+    private(set) var presenceKnown = false
     var unreadTotal: Int { unread.values.reduce(0, +) }
     /// Saluran real-time sedang tersambung (kalau tidak, jendela chat menyegarkan sendiri berkala)
     private(set) var liveConnected = false
@@ -214,6 +218,8 @@ final class Account {
     private var token: String? { Keychain.get(Account.tokenAccount) }
     var isLinked: Bool { token != nil }
     var userHandle: String { defaults.string(forKey: "accountHandle") ?? "" }
+    /// Teman selalu melihat akun ini offline (diatur di sini atau di web › Akun; nilai terakhir dari server)
+    var hidePresence: Bool { defaults.bool(forKey: "hidePresence") }
 
     private lazy var session: URLSession = {
         let c = URLSessionConfiguration.ephemeral
@@ -363,10 +369,12 @@ final class Account {
         friendNames = [:]
         friends = []
         online = []
+        presenceKnown = false
         defaults.removeObject(forKey: "friends")
         onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
         defaults.removeObject(forKey: "accountHandle")
+        defaults.removeObject(forKey: "hidePresence")
         defaults.removeObject(forKey: "roster")
         roster = []
         statusText = status
@@ -393,12 +401,14 @@ final class Account {
                 return
             }
             defaults.set(r.user.handle, forKey: "accountHandle")
+            if let h = r.user.hide_presence { defaults.set(h, forKey: "hidePresence") }
             self.statusText = "Terhubung sebagai @\(r.user.handle)"
             if let raw = try? JSONEncoder().encode(r.pets) { defaults.set(raw, forKey: "roster") }
             for p in r.pets where !p.mine { if let o = p.owner_id { self.friendNames[o] = p.owner_name } }
             if let f = r.friends {
                 self.friends = f
                 for x in f { self.friendNames[x.id] = x.name }
+                if f.contains(where: { $0.online != nil }) { self.presenceKnown = true }
                 self.setOnline(Set(f.filter { $0.online == true }.map(\.id)))
                 if let raw = try? JSONEncoder().encode(f) { defaults.set(raw, forKey: "friends") }
             }
@@ -492,6 +502,15 @@ final class Account {
                 return done(nil, self?.errorText(data, code))
             }
             done(r.message, nil)
+        }
+    }
+
+    /// Sembunyikan / tampilkan status online akun ini dari teman. `done(nil)` = tersimpan, selain itu pesan galat.
+    func setHidePresence(_ hide: Bool, _ done: @escaping (String?) -> Void) {
+        send(request("/api/app/presence", method: "PUT", body: ["hidden": hide])) { [weak self] data, code in
+            guard code == 200 else { return done(self?.errorText(data, code) ?? "Gagal menyimpan.") }
+            defaults.set(hide, forKey: "hidePresence")
+            done(nil)
         }
     }
 
@@ -599,7 +618,10 @@ final class Account {
             liveConnected = true
             liveRetry = 2
             applyUnread(ev.unread ?? [])
-            if let o = ev.online_friends { online = Set(o) }
+            if let o = ev.online_friends {
+                online = Set(o)
+                presenceKnown = true
+            }
             onPresence?() // status teman kembali bisa dipercaya → titiknya muncul lagi
         case "message":
             guard let friend = ev.friend_id, let m = ev.message else { return }

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import Modal from '../components/Modal.vue'
 import PetSprite from '../components/PetSprite.vue'
 import { api } from '../api.js'
@@ -17,7 +17,13 @@ async function load() {
   try { Object.assign(data, await api.get('/friends')) } catch (e) { fail(e) }
   loading.value = false
 }
-onMounted(load)
+// status online teman berubah sendiri → segarkan berkala selama halaman terbuka (dan tab terlihat)
+let timer
+onMounted(() => {
+  load()
+  timer = setInterval(() => { if (!document.hidden) load() }, 30000)
+})
+onUnmounted(() => clearInterval(timer))
 
 async function makeInvite() {
   try {
@@ -124,7 +130,11 @@ async function unfriend() {
       </div>
       <article v-for="f in data.friends" :key="f.id" class="friend">
         <div class="row spread">
-          <h2>{{ f.name }} <span class="handle">@{{ f.handle }}</span></h2>
+          <h2>
+            {{ f.name }} <span class="handle">@{{ f.handle }}</span>
+            <span v-if="f.online" class="tag ok presence" title="Temu sedang terbuka di Mac-nya">Online</span>
+            <span v-else class="tag presence" title="Temu-nya sedang tertutup, atau statusnya disembunyikan">Offline</span>
+          </h2>
           <div class="row small">
             <button class="btn small" @click="nudging = f">Sapa</button>
             <button class="link danger" @click="removing = f">Hapus teman</button>
@@ -182,6 +192,7 @@ h2 { margin-bottom: 12px; }
 .friend { padding: 20px 0; border-top: 3px solid var(--tinta); }
 .friend:first-of-type { border-top: 0; padding-top: 0; }
 .handle { font-family: var(--body); font-size: 15px; font-weight: 400; color: var(--tinta-2); }
+.presence { font-family: var(--body); vertical-align: middle; margin-left: 4px; }
 .pets { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
 .fpet { display: flex; gap: 12px; padding: 12px; align-items: center; }
 .fpet > div { display: grid; gap: 4px; justify-items: start; min-width: 0; }

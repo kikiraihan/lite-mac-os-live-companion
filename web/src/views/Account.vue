@@ -6,6 +6,17 @@ import { fail, session, toast } from '../store.js'
 const profile = reactive({ name: session.user.name, handle: session.user.handle })
 const pw = reactive({ current_password: '', new_password: '' })
 const busy = ref(false)
+const hidePresence = ref(!!session.user.hide_presence)
+
+async function savePresence() {
+  try {
+    session.user = (await api.patch('/auth/me', { hide_presence: hidePresence.value })).user
+    toast(hidePresence.value ? 'Status online-mu disembunyikan' : 'Teman bisa melihat kamu online lagi')
+  } catch (e) {
+    hidePresence.value = !!session.user.hide_presence
+    fail(e)
+  }
+}
 
 async function saveProfile() {
   busy.value = true
@@ -43,6 +54,13 @@ async function savePassword() {
       </label>
       <div><button class="btn primary" :disabled="busy">Simpan profil</button></div>
     </form>
+    <section class="stack">
+      <h2>Privasi</h2>
+      <div class="field">
+        <label class="switch"><input type="checkbox" v-model="hidePresence" @change="savePresence" /><i></i> Sembunyikan status online-ku</label>
+        <small>Teman selalu melihatmu offline, walaupun Temu sedang terbuka di Mac-mu. Pesan tetap sampai seperti biasa.</small>
+      </div>
+    </section>
     <form class="stack" @submit.prevent="savePassword">
       <h2>Ganti password</h2>
       <label class="field"><span>Password sekarang</span>

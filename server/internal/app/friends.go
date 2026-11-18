@@ -55,7 +55,7 @@ func (s *Server) befriend(ctx context.Context, a, b string) error {
 
 func (s *Server) listFriends(w http.ResponseWriter, r *http.Request) error {
 	me := who(r).UserID
-	rows, err := s.DB.QueryContext(r.Context(), `SELECT u.id, u.name, u.handle, f.created_at FROM friendships f
+	rows, err := s.DB.QueryContext(r.Context(), `SELECT u.id, u.name, u.handle, f.created_at, u.hide_presence FROM friendships f
 		JOIN users u ON u.id = CASE WHEN f.user_a=$1 THEN f.user_b ELSE f.user_a END
 		WHERE (f.user_a=$1 OR f.user_b=$1) AND u.disabled_at IS NULL ORDER BY lower(u.name)`, me)
 	if err != nil {
@@ -67,11 +67,14 @@ func (s *Server) listFriends(w http.ResponseWriter, r *http.Request) error {
 	for rows.Next() {
 		var id, name, handle string
 		var at time.Time
-		if err := rows.Scan(&id, &name, &handle, &at); err != nil {
+		var hidden bool
+		if err := rows.Scan(&id, &name, &handle, &at, &hidden); err != nil {
 			return err
 		}
 		index[id] = len(friends)
-		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "since": at, "pets": []map[string]any{}})
+		// online: Temu terbuka di Mac teman itu dan statusnya tidak disembunyikan (live.go)
+		friends = append(friends, map[string]any{"id": id, "name": name, "handle": handle, "since": at,
+			"online": s.seenOnline(id, hidden), "pets": []map[string]any{}})
 	}
 	if err := rows.Err(); err != nil {
 		return err

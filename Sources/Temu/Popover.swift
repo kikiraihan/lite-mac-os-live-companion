@@ -105,8 +105,9 @@ final class PopoverModel: ObservableObject {
         let acc = app.account
         var skins: [String: Skin] = [:]
         for p in app.stage.pets where !p.mine && !p.ownerID.isEmpty && skins[p.ownerID] == nil { skins[p.ownerID] = p.skin }
-        // status online hanya bisa dipercaya selama saluran real-time Mac ini sendiri tersambung
-        let presence = { (id: String) -> Bool? in acc.liveConnected ? acc.online.contains(id) : nil }
+        // status online hanya bisa dipercaya selama saluran real-time Mac ini sendiri tersambung,
+        // dan hanya kalau server-nya memang mengirim status (server lama: tanpa titik, bukan "offline" semua)
+        let presence = { (id: String) -> Bool? in acc.liveConnected && acc.presenceKnown ? acc.online.contains(id) : nil }
         var list: [ChatFriend] = acc.friends.map {
             ChatFriend(id: $0.id, name: $0.name, handle: $0.handle, skin: skins[$0.id], unread: acc.unread[$0.id] ?? 0,
                        online: presence($0.id))

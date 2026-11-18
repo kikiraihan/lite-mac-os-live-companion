@@ -214,6 +214,75 @@ func TestPresence(t *testing.T) {
 		t.Fatal("Dina masih online di sync")
 	}
 
+	// web: daftar teman membawa status online juga
+	webOnline := func(id string) bool {
+		for _, f := range list(kiki.must(200, "GET", "/api/friends", nil), "friends") {
+			if m := f.(map[string]any); m["id"] == id {
+				return m["online"] == true
+			}
+		}
+		t.Fatalf("teman %s tidak ada di /api/friends", id)
+		return false
+	}
+	if webOnline(dinaID) {
+		t.Fatal("web: Dina online padahal sudah menutup Temu")
+	}
+
+	// Dina menyembunyikan status saat sedang online → Kiki langsung melihatnya offline
+	dws = dial(t, ts, dmac.bearer)
+	next(t, dws)
+	if ev := next(t, kws); ev["online"] != true {
+		t.Fatalf("kabar online lagi: %v", ev)
+	}
+	if !webOnline(dinaID) {
+		t.Fatal("web: Dina tidak online")
+	}
+	if r := dmac.must(200, "PUT", "/api/app/presence", map[string]any{"hidden": true}); r["hidden"] != true {
+		t.Fatalf("sembunyikan: %v", r)
+	}
+	if ev := next(t, kws); ev["type"] != "presence" || ev["friend_id"] != dinaID || ev["online"] != false {
+		t.Fatalf("kabar sembunyi: %v", ev)
+	}
+	if onlineIn(kmac.must(200, "GET", "/api/app/sync", nil), dinaID) || webOnline(dinaID) {
+		t.Fatal("status Dina masih terlihat online")
+	}
+	if h := next(t, dial(t, ts, kmac.bearer)); len(h["online_friends"].([]any)) != 0 {
+		t.Fatalf("hello menyebut Dina online: %v", h)
+	}
+	if u := dmac.must(200, "GET", "/api/app/sync", nil)["user"].(map[string]any); u["hide_presence"] != true {
+		t.Fatalf("sync user: %v", u)
+	}
+	dmac.must(422, "PUT", "/api/app/presence", map[string]any{})
+
+	// tersembunyi: menutup & membuka Temu tidak memberi kabar apa pun
+	dws.Close(websocket.StatusNormalClosure, "")
+	dws = dial(t, ts, dmac.bearer)
+	next(t, dws)
+	// quiet: tidak ada kabar dalam 200 ms. Batas waktu baca menutup koneksinya, jadi Kiki menyambung ulang sesudahnya.
+	quiet := func(ws *websocket.Conn, who string) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		if _, b, err := ws.Read(ctx); err == nil {
+			t.Fatalf("%s menerima kabar: %s", who, b)
+		}
+	}
+	time.Sleep(200 * time.Millisecond) // lewat jeda offline
+	quiet(kws, "Kiki")
+	kws = dial(t, ts, kmac.bearer)
+	next(t, kws)
+
+	// ditampilkan lagi lewat web (Akun) → kabar online; /api/auth/me ikut berubah
+	if u := dina.must(200, "PATCH", "/api/auth/me", map[string]any{"hide_presence": false})["user"].(map[string]any); u["hide_presence"] != false {
+		t.Fatalf("auth/me: %v", u)
+	}
+	if ev := next(t, kws); ev["friend_id"] != dinaID || ev["online"] != true {
+		t.Fatalf("kabar tampil lagi: %v", ev)
+	}
+	// menyimpan nilai yang sama tidak memberi kabar ulang
+	dina.must(200, "PATCH", "/api/auth/me", map[string]any{"hide_presence": false})
+	quiet(kws, "Kiki")
+
 	// Raka tidak menerima kabar apa pun
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
