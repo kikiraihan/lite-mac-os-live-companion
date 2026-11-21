@@ -91,9 +91,16 @@ jobs:
           shot obrolan-tersembunyi false --demo --demo-hidden
           shot emoji false --demo --demo-emoji
           shot emot false --demo --demo-react
-          shot emot-perayaan false --demo --demo-reaction party
-          shot emot-sayang true --demo --demo-reaction love
-          shot emot-kembang-api true --demo --demo-reaction fireworks
+          # emot lewat pet: dibekukan di detik tertentu supaya bisa dibandingkan antar-commit
+          shot emot-sayang false --demo --demo-reaction love --demo-reaction-at 1.0
+          shot emot-mantap true --demo --demo-reaction like --demo-reaction-at 0.5
+          shot emot-ngakak false --demo --demo-reaction haha --demo-reaction-at 1.1
+          shot emot-tepuk true --demo --demo-reaction clap --demo-reaction-at 0.85
+          shot emot-wah false --demo --demo-reaction wow --demo-reaction-at 0.3
+          shot emot-perayaan false --demo --demo-reaction party --demo-reaction-at 0.95
+          shot emot-perayaan-turun true --demo --demo-reaction party --demo-reaction-at 1.8
+          shot emot-kembang-api true --demo --demo-reaction fireworks --demo-reaction-at 1.75
+          shot emot-berulang false --demo --demo-reaction love
           shot balon-teman false --demo --demo-bubble
           shot samping-pet false --demo --demo-pet
           shot menu-bar-saat-samping-pet false --demo --demo-pet-menu

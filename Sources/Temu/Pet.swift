@@ -432,8 +432,9 @@ final class Stage: NSObject {
     /// Emot lewat pet: animasi di atas pet milik teman `owner`. Pet-nya tidak tampil di Mac ini → di atas pet-ku
     /// dengan `label` (mis. "dari Dina") supaya tetap jelas dari / untuk siapa.
     /// false = tidak bisa diputar (desktop disembunyikan, animasi emot dimatikan, atau tidak ada pet).
+    /// `freezeAt`: hanya untuk tangkapan layar CI (animasi dibekukan di detik itu dan tidak dibuang).
     @discardableResult
-    func react(_ r: Reaction, owner: String, label: String?) -> Bool {
+    func react(_ r: Reaction, owner: String, label: String?, freezeAt: Double? = nil) -> Bool {
         guard Prefs.showDesktop, Prefs.reactions, window.isVisible, let root = view.layer else { return false }
         let seen = { (p: Pet) in p.act != .away && !p.offstage }
         let friendPet = owner.isEmpty ? nil : pets.first { !$0.mine && $0.ownerID == owner && seen($0) }
@@ -441,7 +442,9 @@ final class Stage: NSObject {
         shows.removeAll { $0.layer.superlayer == nil }
         if shows.count >= 4 { shows.removeFirst().layer.removeFromSuperlayer() } // klik beruntun: yang paling lama mengalah
         perform(r, p)
-        let show = ReactionShow(r, label: friendPet == nil ? label : nil, scale: window.backingScaleFactor,
+        // label cukup satu per pet: emot beruntun tidak menumpuk label di tempat yang sama
+        let labeled = shows.contains { $0.pet === p && $0.lift > 0 }
+        let show = ReactionShow(r, label: friendPet == nil && !labeled ? label : nil, scale: window.backingScaleFactor,
                                 size: 0.75 + s * 0.1, calm: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         show.pet = p
         CATransaction.begin()
@@ -451,6 +454,10 @@ final class Stage: NSObject {
         CATransaction.commit()
         show.start()
         shows.append(show)
+        if let freezeAt {
+            show.freeze(at: freezeAt)
+            return true
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + show.length + 0.2) { [weak self, weak show] in
             show?.layer.removeFromSuperlayer()
             self?.shows.removeAll { $0.layer.superlayer == nil }

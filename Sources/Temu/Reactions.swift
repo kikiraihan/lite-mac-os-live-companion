@@ -134,6 +134,12 @@ final class ReactionShow {
         CATransaction.commit()
     }
 
+    /// Bekukan pertunjukan di detik `t` (hanya untuk tangkapan layar CI: --demo-reaction-at)
+    func freeze(at t: Double) {
+        layer.speed = 0
+        layer.timeOffset = t0 + t
+    }
+
     // MARK: koreografi
 
     /// Kurangi gerakan: emoji muncul pelan, naik sedikit, memudar
@@ -251,7 +257,6 @@ final class ReactionShow {
         shell(to: CGPoint(x: 52, y: 228), color: Palette.lemon, inner: Palette.white, delay: 0.42)
         shell(to: CGPoint(x: -6, y: 262), color: Palette.leaf, inner: Palette.lemon, delay: 0.84)
         shell(to: CGPoint(x: 30, y: 172), color: Palette.orange, inner: Palette.white, delay: 1.22)
-        floater("🎆", size: 26, from: CGPoint(x: 0, y: 36), rise: 40, sway: 3, delay: 0, dur: 1.0, wobble: 0.05)
     }
 
     // MARK: bahan

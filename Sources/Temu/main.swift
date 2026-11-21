@@ -340,8 +340,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             }
         }
         // --demo-reaction <nama>: emot dari teman diputar berulang di atas pet untuk tangkapan layar CI (mis. party)
+        // --demo-reaction-at <detik>: diputar sekali dan dibekukan di detik itu, supaya tangkapan layarnya pasti
         if let i = args.firstIndex(of: "--demo-reaction"), i + 1 < args.count, let r = Reaction.find(args[i + 1]) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
+            let at = args.firstIndex(of: "--demo-reaction-at").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
+            // pet dipanggil turun dulu supaya pasti terlihat (tidak sedang pergi mencari hadiah)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.stage.summon() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                if let at {
+                    self?.stage.react(r, owner: "d", label: "dari Dina", freezeAt: at)
+                    return
+                }
                 self?.playReaction(r, friend: "d", mine: false)
                 let t = Timer(timeInterval: 1.4, repeats: true) { [weak self] _ in self?.playReaction(r, friend: "d", mine: false) }
                 RunLoop.main.add(t, forMode: .common)
