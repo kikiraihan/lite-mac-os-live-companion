@@ -16,6 +16,7 @@ import (
 //
 //	{"type":"hello",   "unread":[{"friend_id":…,"friend_name":…,"count":3}]}   saat tersambung
 //	{"type":"message", "friend_id":…, "friend_name":…, "message":{…}}   pesan baru (masuk / dari Mac lain milik sendiri)
+//	                                                                    emot lewat pet: message.reaction ("love", "party", …)
 //	{"type":"read",    "friend_id":…}                                   percakapan sudah dibaca (di Mac mana pun)
 //	{"type":"nudge"}                                                    ada sapaan → aplikasi sinkron sekarang
 //	{"type":"presence","friend_id":…, "online":true}                    teman membuka / menutup Temu di Mac-nya

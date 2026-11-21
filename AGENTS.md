@@ -39,6 +39,10 @@ Urutan 16 pose sama persis di:
 
 Mengubah urutan / jumlah pose = mengubah keempatnya sekaligus, dan pet lama di database jadi salah.
 
+Emot lewat pet (baki ✨ di obrolan) punya daftar nama yang sama di `server/internal/app/messages.go`
+(`reactions`) dan `Sources/Temu/Reactions.swift` (`enum Reaction`). Emot baru = tambahkan di keduanya;
+aplikasi lama tetap menampilkannya sebagai emoji biasa karena `text` berisi emojinya.
+
 Gambar pet bawaan hanya ditulis di **`Sources/Temu/Sprites.swift`** (teks, 1 karakter = 1 piksel).
 `server/internal/sprite/templates/*.png` dan `docs/sprites.png` adalah hasil render — jangan diedit tangan,
 jalankan `make sprites`. CI menolak kalau keduanya tidak sinkron.

@@ -23,6 +23,20 @@ import (
 
 const maxMessage = 1000 // karakter
 
+// Emot lewat pet: dikirim dari baki emot di obrolan ({"reaction":"love"} sebagai ganti "text").
+// Aplikasi penerima memutar animasinya di atas pet pengirim. Kolom text diisi emojinya, jadi aplikasi
+// lama tetap menampilkannya sebagai pesan biasa. Daftar ini sama dengan `enum Reaction` di
+// Sources/Temu/Reactions.swift (urutan tidak penting, nama harus sama).
+var reactions = map[string]string{
+	"love":      "❤️",
+	"like":      "👍",
+	"haha":      "😂",
+	"clap":      "👏",
+	"wow":       "😮",
+	"party":     "🎉",
+	"fireworks": "🎆",
+}
+
 func (s *Server) messageRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/app/ws", s.device(s.appLive))
 	mux.HandleFunc("GET /api/app/messages/{id}", s.device(s.appMessages))
@@ -44,13 +58,18 @@ func (s *Server) chatFriend(r *http.Request) (id, name string, err error) {
 	return id, name, notFoundIf(err)
 }
 
-func messageJSON(id int64, text string, at time.Time, mine bool) map[string]any {
-	return map[string]any{"id": id, "text": text, "created_at": at, "mine": mine}
+// messageJSON: "reaction" hanya ada untuk emot lewat pet
+func messageJSON(id int64, text, reaction string, at time.Time, mine bool) map[string]any {
+	m := map[string]any{"id": id, "text": text, "created_at": at, "mine": mine}
+	if reaction != "" {
+		m["reaction"] = reaction
+	}
+	return m
 }
 
 // myMessageJSON: pesanku sendiri + statusnya (sent / delivered / read)
-func myMessageJSON(id int64, text string, at time.Time, status string) map[string]any {
-	m := messageJSON(id, text, at, true)
+func myMessageJSON(id int64, text, reaction string, at time.Time, status string) map[string]any {
+	m := messageJSON(id, text, reaction, at, true)
 	m["status"] = status
 	return m
 }
@@ -95,7 +114,7 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 	me := who(r).UserID
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	s.markDelivered(r.Context(), me, friend) // obrolan dibuka di Mac ini → pesan dari teman sudah sampai
-	rows, err := s.DB.QueryContext(r.Context(), `SELECT id, from_user, text, created_at, delivered_at, read_at FROM messages
+	rows, err := s.DB.QueryContext(r.Context(), `SELECT id, from_user, text, COALESCE(reaction, ''), created_at, delivered_at, read_at FROM messages
 		WHERE LEAST(from_user, to_user)=LEAST($1::uuid, $2::uuid) AND GREATEST(from_user, to_user)=GREATEST($1::uuid, $2::uuid)
 		AND ($3::bigint = 0 OR id < $3) ORDER BY id DESC LIMIT 51`, me, friend, before)
 	if err != nil {
@@ -105,16 +124,16 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 	out := []map[string]any{}
 	for rows.Next() {
 		var id int64
-		var from, text string
+		var from, text, reaction string
 		var at time.Time
 		var delivered, read sql.NullTime
-		if err := rows.Scan(&id, &from, &text, &at, &delivered, &read); err != nil {
+		if err := rows.Scan(&id, &from, &text, &reaction, &at, &delivered, &read); err != nil {
 			return err
 		}
 		if from == me {
-			out = append(out, myMessageJSON(id, text, at, messageStatus(delivered, read)))
+			out = append(out, myMessageJSON(id, text, reaction, at, messageStatus(delivered, read)))
 		} else {
-			out = append(out, messageJSON(id, text, at, false))
+			out = append(out, messageJSON(id, text, reaction, at, false))
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -137,12 +156,21 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 		return err
 	}
 	var req struct {
-		Text string `json:"text"`
+		Text     string `json:"text"`
+		Reaction string `json:"reaction"` // emot lewat pet; kalau diisi, text diabaikan
 	}
 	if err := httpx.Decode(r, &req, 1<<13); err != nil {
 		return err
 	}
 	text := clean(req.Text, maxMessage)
+	var reaction sql.NullString
+	if req.Reaction != "" {
+		emoji, ok := reactions[req.Reaction]
+		if !ok {
+			return httpx.Invalid("Emot itu belum dikenal server. Perbarui aplikasi Temu, lalu coba lagi.")
+		}
+		text, reaction = emoji, sql.NullString{String: req.Reaction, Valid: true}
+	}
 	if text == "" {
 		return httpx.Invalid("Pesannya masih kosong. Tulis sesuatu dulu, lalu kirim.")
 	}
@@ -155,20 +183,20 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 	}
 	var id int64
 	var at time.Time
-	if err := s.DB.QueryRowContext(r.Context(), `INSERT INTO messages(from_user, to_user, text) VALUES($1,$2,$3) RETURNING id, created_at`,
-		p.UserID, friend, text).Scan(&id, &at); err != nil {
+	if err := s.DB.QueryRowContext(r.Context(), `INSERT INTO messages(from_user, to_user, text, reaction) VALUES($1,$2,$3,$4) RETURNING id, created_at`,
+		p.UserID, friend, text, reaction).Scan(&id, &at); err != nil {
 		return err
 	}
 	// ke teman (semua Mac-nya) dan ke Mac lain milik pengirim, supaya jendela chat di sana ikut bertambah
 	status := "sent"
 	if s.live.publish(friend, map[string]any{"type": "message", "friend_id": p.UserID, "friend_name": p.Name,
-		"message": messageJSON(id, text, at, false)}) > 0 {
+		"message": messageJSON(id, text, reaction.String, at, false)}) > 0 {
 		// minimal satu Mac teman sedang tersambung dan menerimanya → langsung ✓✓
 		if _, err := s.DB.ExecContext(r.Context(), `UPDATE messages SET delivered_at=now() WHERE id=$1`, id); err == nil {
 			status = "delivered"
 		}
 	}
-	mine := myMessageJSON(id, text, at, status)
+	mine := myMessageJSON(id, text, reaction.String, at, status)
 	s.live.publish(p.UserID, map[string]any{"type": "message", "friend_id": friend, "message": mine})
 	httpx.JSON(w, 201, map[string]any{"message": mine})
 	return nil

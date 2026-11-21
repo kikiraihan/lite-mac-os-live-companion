@@ -90,6 +90,10 @@ jobs:
           shot obrolan-kosong false --demo --demo-empty
           shot obrolan-tersembunyi false --demo --demo-hidden
           shot emoji false --demo --demo-emoji
+          shot emot false --demo --demo-react
+          shot emot-perayaan false --demo --demo-reaction party
+          shot emot-sayang true --demo --demo-reaction love
+          shot emot-kembang-api true --demo --demo-reaction fireworks
           shot balon-teman false --demo --demo-bubble
           shot samping-pet false --demo --demo-pet
           shot menu-bar-saat-samping-pet false --demo --demo-pet-menu

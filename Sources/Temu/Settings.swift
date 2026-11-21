@@ -214,6 +214,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
     private lazy var hidePresenceSwitch = Form.toggle(self, #selector(presenceChanged(_:)))
     private lazy var badgePopup = Form.popup([("Titik merah", 0), ("Jumlah pesan", 1), ("Tanpa tanda", 2)], self, #selector(intChanged(_:)))
     private lazy var waveSwitch = Form.toggle(self, #selector(boolChanged(_:)))
+    private lazy var reactionSwitch = Form.toggle(self, #selector(boolChanged(_:)))
     private lazy var chatClickPopup = Form.popup(Prefs.chatClicks.enumerated().map { ($0.element.title, $0.offset) },
                                                  self, #selector(intChanged(_:)))
     private lazy var chatPositionPopup = Form.popup([("Di bawah ikon menu bar", 0), ("Di samping pet", 1)], self, #selector(intChanged(_:)))
@@ -227,6 +228,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
         (remindSwitch, "reminders"), (remindPopup, "reminderMinutes"),
         (soundSwitch, "messageSound"), (soundPopup, "messageSoundIndex"), (hideChatSwitch, "hideChat"), (petMessagesPopup, "petMessages"),
         (badgePopup, "unreadBadge"), (waveSwitch, "unreadWave"), (chatPositionPopup, "chatPosition"), (chatClickPopup, "chatClick"),
+        (reactionSwitch, "reactions"),
     ]
 
     // tab Pet & Akun
@@ -317,6 +319,8 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Pet melambai", "Pet di ikon menu bar sesekali melambai selama ada pesan yang belum dibaca.", waveSwitch),
                 Form.row("Pesan di pet teman", "Saat pesan atau sapaan masuk, pet pengirim di desktop memberi tahu. \"Tampilkan isi pesan\" " +
                          "memperlihatkan kata-kata temanmu di balon merah muda, jadi orang di dekatmu bisa ikut membaca.", petMessagesPopup),
+                Form.row("Animasi emot", "Emot dari teman (❤️ 👍 🎉 …) melayang di atas pet pengirimnya di desktop. " +
+                         "Kalau dimatikan, emot masuk seperti pesan biasa.", reactionSwitch),
                 Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
                          "Klik ikon sambil menahan pintasan di bawah untuk langsung membuka obrolan di menu bar. Klik kanan ikon untuk menu lengkap.", nil),
                 Form.row("Pintasan buka obrolan", "Obrolan langsung terbuka di menu bar, walau posisinya di samping pet atau sedang disembunyikan. " +

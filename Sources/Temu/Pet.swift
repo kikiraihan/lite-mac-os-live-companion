@@ -28,6 +28,8 @@ enum Prefs {
         let n = (defaults.string(forKey: "petName") ?? "").trimmingCharacters(in: .whitespaces)
         return n.isEmpty ? species.defaultName : n
     }
+    /// Emot dari teman (❤️ 👍 🎉 …) diputar sebagai animasi di atas pet pengirimnya (Reactions.swift)
+    static var reactions: Bool { defaults.bool(forKey: "reactions") }
     /// Bunyi saat pesan chat masuk
     static var messageSound: Bool { defaults.bool(forKey: "messageSound") }
     /// Pilihan bunyi bawaan macOS (urutan = tag pop-up di Pengaturan)
@@ -67,7 +69,7 @@ enum Prefs {
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
             "messageSound": true, "messageSoundIndex": 0, "hideChat": false, "petMessages": 0,
-            "unreadBadge": 0, "unreadWave": false, "chatPosition": 0, "chatClick": 0,
+            "unreadBadge": 0, "unreadWave": false, "chatPosition": 0, "chatClick": 0, "reactions": true,
         ])
     }
 }
@@ -200,6 +202,8 @@ final class Stage: NSObject {
     private var press: (pet: Pet?, prop: Prop?, at: CGPoint, moved: Bool)?
     private var pendingNudges: [(String, String)] = []
     private var asleep = false
+    /// Emot yang sedang diputar (Reactions.swift)
+    private var shows: [ReactionShow] = []
 
     /// Klik kanan pada pet → menu aplikasi
     var onContextMenu: ((NSEvent, NSView) -> Void)?
@@ -421,6 +425,58 @@ final class Stage: NSObject {
     func waveBarPet() {
         guard let p = barPet, p.act != .held, p.act != .away, p.act != .fall, p.act != .wave else { return }
         p.start(.wave, 1.6)
+    }
+
+    // MARK: emot lewat pet
+
+    /// Emot lewat pet: animasi di atas pet milik teman `owner`. Pet-nya tidak tampil di Mac ini → di atas pet-ku
+    /// dengan `label` (mis. "dari Dina") supaya tetap jelas dari / untuk siapa.
+    /// false = tidak bisa diputar (desktop disembunyikan, animasi emot dimatikan, atau tidak ada pet).
+    @discardableResult
+    func react(_ r: Reaction, owner: String, label: String?) -> Bool {
+        guard Prefs.showDesktop, Prefs.reactions, window.isVisible, let root = view.layer else { return false }
+        let seen = { (p: Pet) in p.act != .away && !p.offstage }
+        let friendPet = owner.isEmpty ? nil : pets.first { !$0.mine && $0.ownerID == owner && seen($0) }
+        guard let p = friendPet ?? pets.first(where: { $0.mine && seen($0) }) ?? pets.first(where: seen) else { return false }
+        shows.removeAll { $0.layer.superlayer == nil }
+        if shows.count >= 4 { shows.removeFirst().layer.removeFromSuperlayer() } // klik beruntun: yang paling lama mengalah
+        perform(r, p)
+        let show = ReactionShow(r, label: friendPet == nil ? label : nil, scale: window.backingScaleFactor,
+                                size: 0.75 + s * 0.1, calm: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        show.pet = p
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        root.addSublayer(show.layer)
+        place(show)
+        CATransaction.commit()
+        show.start()
+        shows.append(show)
+        DispatchQueue.main.asyncAfter(deadline: .now() + show.length + 0.2) { [weak self, weak show] in
+            show?.layer.removeFromSuperlayer()
+            self?.shows.removeAll { $0.layer.superlayer == nil }
+        }
+        return true
+    }
+
+    /// Pet ikut bereaksi terhadap emotnya (pet yang sedang dipegang / jatuh / pergi dibiarkan)
+    private func perform(_ r: Reaction, _ p: Pet) {
+        guard p.act != .held, p.act != .fall, p.act != .jump, p.act != .away else { return }
+        switch r {
+        case .party:
+            if p.y == 0 { p.vy = 520; p.start(.jump, 2) }
+        case .love: p.start(.love, 2.4)
+        case .like, .clap: p.start(.wave, 2.2)
+        case .haha: p.start(.dance, 2.4)
+        case .wow: p.start(.surprise, 1.4)
+        case .fireworks: p.start(.surprise, 2.2)
+        }
+    }
+
+    /// Emot menempel di atas kepala pet (mengikuti x-nya, tidak ikut melompat), tidak terpotong tepi layar
+    private func place(_ show: ReactionShow) {
+        guard let p = show.pet else { return }
+        let x = min(max(p.x, 90), width - 90)
+        show.layer.position = CGPoint(x: round(x), y: round(floorY + 22 * s + show.lift))
     }
 
     /// Pesan panjang dipotong supaya balon tidak menutupi layar
@@ -893,6 +949,7 @@ final class Stage: NSObject {
             q.layer.frame = CGRect(x: round(q.x - w / 2), y: round(f + q.y), width: w, height: h)
             if q.role == .effect { q.layer.opacity = Float(min(1, (q.ttl - q.age) * 2)) }
         }
+        for show in shows { place(show) }
         CATransaction.commit()
 
         // klik hanya ditangkap kalau kursor tepat di atas pet / benda; selain itu tembus ke aplikasi di bawahnya

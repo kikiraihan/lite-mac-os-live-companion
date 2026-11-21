@@ -6,6 +6,8 @@
 //   tengah : obrolan + kolom tulis (fokus otomatis, Return = kirim)
 //            pesanku: ✓ terkirim, ✓✓ diterima (sampai di Mac teman), ✓✓ biru dibaca
 //            tombol 🙂 membuka panel emoji bawaan (Unicode, font emoji sistem); ⌘C/⌘V/⌘A lewat MainMenu.swift
+//            tombol ✨ membuka baki emot lewat pet: klik = langsung terkirim, animasinya muncul di atas pet-ku
+//            di layar teman (Reactions.swift). Di obrolan emot tampil besar tanpa balon; klik = putar lagi.
 //   bawah  : aksi pet (makan, bola, panggil, tampil/sembunyi) lalu status akun, web, pengaturan, keluar
 // Pengaturan › Pesan › "Sembunyikan obrolan": obrolan tertutup jadi satu baris "Obrolan" sampai diklik (privasi).
 // Keterangan panjang hanya di tooltip. Klik kanan ikon tetap membuka menu lengkap (native).
@@ -83,6 +85,8 @@ final class PopoverModel: ObservableObject {
     @Published private(set) var recentEmoji: [String] = defaults.stringArray(forKey: "recentEmoji") ?? []
     /// Dibuka lewat aksi yang memang meminta obrolan (⌘-klik pet teman, menu "Kirim pesan ke …") → langsung terbuka
     private var revealNext = false
+    /// Jeda kecil antar emot supaya klik beruntun tidak membanjiri layar teman
+    private var lastReaction = Date.distantPast
 
     // MARK: status yang dibaca tampilan
 
@@ -321,6 +325,32 @@ final class PopoverModel: ObservableObject {
         }
     }
 
+    /// Emot lewat pet: animasinya langsung diputar di desktop Mac ini (di atas pet teman itu, atau pet-ku dengan label
+    /// "untuk …"), lalu dikirim. Kolom tulis tidak tersentuh, jadi kalimat yang sedang diketik tetap aman.
+    func sendReaction(_ r: Reaction) {
+        guard let id = selected, Date().timeIntervalSince(lastReaction) > 0.35 else { return }
+        lastReaction = Date()
+        app?.playReaction(r, friend: id, mine: true)
+        if demo {
+            merge(id, [ChatMessage(id: (threads[id]?.last?.id ?? 0) + 1, text: r.emoji, created_at: ISO8601DateFormatter().string(from: Date()),
+                                   mine: true, status: "sent", reaction: r.rawValue)])
+            return
+        }
+        guard let acc = app?.account else { return }
+        error = nil
+        acc.sendReaction(id, r) { [weak self] m, err in
+            guard let self else { return }
+            guard let m else { self.error = err ?? "Emot gagal terkirim. Coba lagi sebentar lagi."; return }
+            self.merge(id, [m])
+        }
+    }
+
+    /// Emot di obrolan diklik → putar lagi animasinya di desktop
+    func replay(_ r: Reaction, mine: Bool) {
+        guard let id = selected else { return }
+        app?.playReaction(r, friend: id, mine: mine)
+    }
+
     /// Pesan dari saluran real-time (masuk, atau terkirim dari Mac lain milik sendiri)
     func receive(_ friend: String, _ m: ChatMessage) {
         if threads[friend] != nil { merge(friend, [m]) }
@@ -365,6 +395,8 @@ final class PopoverModel: ObservableObject {
             // contoh status centang untuk tangkapan layar: ✓✓ diterima lalu ✓ terkirim
             ChatMessage(id: 6, text: "Aku bawa camilan ya", created_at: iso(2), mine: true, status: "delivered"),
             ChatMessage(id: 7, text: "Sampai jam 8!", created_at: iso(1), mine: true, status: "sent"),
+            // contoh emot lewat pet
+            ChatMessage(id: 8, text: "❤️", created_at: iso(0.5), mine: false, reaction: "love"),
         ]
         threads["r"] = []
         hasMore = ["d": false, "r": false]
@@ -428,6 +460,8 @@ struct PresenceDot: View {
 /// Status pesanku seperti WhatsApp: ✓ terkirim, ✓✓ diterima, ✓✓ biru dibaca
 struct ReceiptTicks: View {
     let status: String
+    /// false = di luar balon Stroberi (emot di obrolan): abu-abu sistem supaya terbaca di mode gelap
+    var onBubble = true
 
     var body: some View {
         let read = status == "read"
@@ -436,7 +470,7 @@ struct ReceiptTicks: View {
             if status == "delivered" || read { Image(systemName: "checkmark").offset(x: 4) }
         }
         .font(.system(size: 9, weight: .bold))
-        .foregroundStyle(read ? Brand.read : Brand.ink.opacity(0.55))
+        .foregroundStyle(read ? Brand.read : (onBubble ? Brand.ink.opacity(0.55) : Color.secondary))
         .frame(width: 14, alignment: .leading)
         .accessibilityLabel(ReceiptTicks.label(status))
     }
@@ -538,6 +572,113 @@ struct EmojiKey: View {
     }
 }
 
+/// Satu emot di baki: membesar saat disorot, memantul saat diklik, dan salinan kecilnya melayang naik
+/// (pratinjau kecil dari animasi yang muncul di layar teman)
+struct ReactionKey: View {
+    let reaction: Reaction
+    @Binding var hovered: Reaction?
+    let action: () -> Void
+    @State private var hover = false
+    @State private var pressed = false
+    @State private var puffs: [UUID] = []
+
+    var body: some View {
+        Button {
+            action()
+            pressed = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { pressed = false }
+            let id = UUID()
+            puffs.append(id)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { puffs.removeAll { $0 == id } }
+        } label: {
+            Text(reaction.emoji)
+                .font(.system(size: 26))
+                .scaleEffect(pressed ? 0.8 : (hover ? 1.22 : 1))
+                .offset(y: hover ? -3 : 0)
+                .animation(.spring(response: 0.28, dampingFraction: 0.55), value: hover)
+                .animation(.spring(response: 0.22, dampingFraction: 0.45), value: pressed)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(Circle().fill(Color.primary.opacity(hover ? 0.08 : 0)).frame(width: 42, height: 42))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .overlay {
+            ZStack {
+                ForEach(puffs, id: \.self) { _ in ReactionPuff(emoji: reaction.emoji) }
+            }
+            .allowsHitTesting(false)
+        }
+        .onHover { h in
+            hover = h
+            if h { hovered = reaction } else if hovered == reaction { hovered = nil }
+        }
+        .help("\(reaction.title) — langsung terkirim")
+        .accessibilityLabel("Kirim emot \(reaction.title)")
+    }
+}
+
+/// Salinan kecil emot yang melayang naik dari tombolnya sambil membesar, lalu memudar
+struct ReactionPuff: View {
+    let emoji: String
+    @State private var go = false
+    @State private var drift = CGFloat.random(in: -14...14)
+
+    var body: some View {
+        Text(emoji)
+            .font(.system(size: 22))
+            .scaleEffect(go ? 1.35 : 0.7)
+            .offset(x: go ? drift : 0, y: go ? -72 : -6)
+            .animation(.easeOut(duration: 0.9), value: go)
+            .opacity(go ? 0 : 1)
+            .animation(.easeIn(duration: 0.9), value: go)
+            .onAppear { DispatchQueue.main.async { go = true } }
+    }
+}
+
+/// Emot di obrolan: emoji besar tanpa balon + namanya (dan centang kalau dariku). Klik = putar lagi di atas pet.
+/// Emot yang baru datang muncul dengan pantulan kecil.
+struct ReactionStamp: View {
+    let reaction: Reaction
+    let mine: Bool
+    let status: String?
+    let replay: () -> Void
+    @State private var hover = false
+    @State private var shown: Bool
+
+    init(reaction: Reaction, mine: Bool, status: String?, fresh: Bool, replay: @escaping () -> Void) {
+        self.reaction = reaction
+        self.mine = mine
+        self.status = status
+        self.replay = replay
+        _shown = State(initialValue: !fresh)
+    }
+
+    var body: some View {
+        Button(action: replay) {
+            VStack(alignment: mine ? .trailing : .leading, spacing: 0) {
+                Text(reaction.emoji)
+                    .font(.system(size: 34))
+                    .scaleEffect(shown ? (hover ? 1.1 : 1) : 0.3)
+                    .rotationEffect(.degrees(hover ? (mine ? -6 : 6) : 0))
+                    .animation(.spring(response: 0.38, dampingFraction: 0.5), value: shown)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.6), value: hover)
+                HStack(spacing: 3) {
+                    Text(reaction.title)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    if mine, let status { ReceiptTicks(status: status, onBubble: false) }
+                }
+            }
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hover = $0 }
+        .onAppear { if !shown { DispatchQueue.main.async { shown = true } } }
+        .accessibilityLabel("Emot \(reaction.title)" + (mine ? " dariku" : ""))
+    }
+}
+
 struct PrimaryButton: View {
     let title: String
     let action: () -> Void
@@ -566,6 +707,9 @@ struct PopoverView: View {
     var place: Place = .menuBar
     @FocusState private var focused: Bool
     @State private var showEmoji = CommandLine.arguments.contains("--demo-emoji") // --demo-emoji: tangkapan layar CI
+    @State private var showReactions = CommandLine.arguments.contains("--demo-react") // --demo-react: tangkapan layar CI
+    /// Emot yang sedang disorot di baki (namanya tampil di judul baki)
+    @State private var hoveredReaction: Reaction?
 
     private static let dayFormat: DateFormatter = {
         let f = DateFormatter()
@@ -771,7 +915,7 @@ struct PopoverView: View {
                     .padding(.horizontal, 14)
                     .padding(.bottom, 4)
             }
-            if showEmoji { emojiPanel }
+            if showReactions { reactionTray } else if showEmoji { emojiPanel }
             composer
         }
     }
@@ -795,8 +939,11 @@ struct PopoverView: View {
                                 .foregroundStyle(.tertiary)
                                 .padding(.vertical, 6)
                         }
-                        bubble(m, tail: i == msgs.count - 1 || msgs[i + 1].mine != m.mine)
-                            .id(m.id)
+                        let tail = i == msgs.count - 1 || msgs[i + 1].mine != m.mine
+                        Group {
+                            if let r = Reaction.find(m.reaction) { reactionStamp(m, r, tail: tail) } else { bubble(m, tail: tail) }
+                        }
+                        .id(m.id)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -850,6 +997,17 @@ struct PopoverView: View {
             }
     }
 
+    /// Emot lewat pet di obrolan: tanpa balon, di sisi pengirimnya
+    private func reactionStamp(_ m: ChatMessage, _ r: Reaction, tail: Bool) -> some View {
+        ReactionStamp(reaction: r, mine: m.mine, status: m.status, fresh: Date().timeIntervalSince(m.date) < 10) {
+            model.replay(r, mine: m.mine)
+        }
+        .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
+        .padding(.bottom, tail ? 6 : 0)
+        .help(PopoverView.timeFormat.string(from: m.date) + (m.mine ? ReceiptTicks.label(m.status) : "") +
+              "\nKlik untuk memutar lagi animasinya di atas pet")
+    }
+
     /// Obrolan kosong: pet teman menyapa + saran kalimat pembuka (mengisi kolom, tidak langsung terkirim)
     private var emptyThread: some View {
         VStack(spacing: 10) {
@@ -891,7 +1049,24 @@ struct PopoverView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(Capsule().fill(Color.primary.opacity(0.06)))
-            Button { showEmoji.toggle(); focused = true } label: {
+            Button {
+                showReactions.toggle()
+                if showReactions { showEmoji = false }
+                focused = true
+            } label: {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 15))
+                    .foregroundStyle(showReactions ? Brand.strawberry : Color.secondary)
+                    .frame(width: 22, height: 30)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(showReactions ? "Tutup emot" : "Emot lewat pet: melayang di atas pet-mu di layar \(name)")
+            Button {
+                showEmoji.toggle()
+                if showEmoji { showReactions = false }
+                focused = true
+            } label: {
                 Image(systemName: "face.smiling")
                     .font(.system(size: 16))
                     .foregroundStyle(showEmoji ? Brand.strawberry : Color.secondary)
@@ -920,6 +1095,36 @@ struct PopoverView: View {
         .padding(.horizontal, 12)
         .padding(.top, 4)
         .padding(.bottom, 12)
+    }
+
+    // MARK: emot lewat pet
+
+    /// Baki emot di atas kolom tulis: satu klik = langsung terkirim; baki tetap terbuka untuk emot berikutnya
+    private var reactionTray: some View {
+        let name = model.current?.name ?? "teman"
+        return VStack(spacing: 2) {
+            HStack(spacing: 6) {
+                Text(hoveredReaction.map { "\($0.emoji)  \($0.title)" } ?? "Emot lewat pet")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(hoveredReaction == nil ? Color.secondary : Color.primary)
+                Spacer(minLength: 4)
+                Text("muncul di atas pet-mu di layar \(name)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 4)
+            HStack(spacing: 0) {
+                ForEach(Reaction.allCases) { r in
+                    ReactionKey(reaction: r, hovered: $hoveredReaction) { model.sendReaction(r) }
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 2)
+        .background(Color.primary.opacity(0.03))
+        .zIndex(1) // salinan emot yang melayang naik digambar di atas obrolan
     }
 
     // MARK: emoji
