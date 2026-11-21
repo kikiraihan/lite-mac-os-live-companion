@@ -319,7 +319,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Pet melambai", "Pet di ikon menu bar sesekali melambai selama ada pesan yang belum dibaca.", waveSwitch),
                 Form.row("Pesan di pet teman", "Saat pesan atau sapaan masuk, pet pengirim di desktop memberi tahu. \"Tampilkan isi pesan\" " +
                          "memperlihatkan kata-kata temanmu di balon merah muda, jadi orang di dekatmu bisa ikut membaca.", petMessagesPopup),
-                Form.row("Animasi emot", "Emot dari teman (❤️ 👍 🎉 …) melayang di atas pet pengirimnya di desktop. " +
+                Form.row("Animasi emot", "Emot dari teman (👏 👍 ❤️ 🎉 …) melayang di atas pet pengirimnya di desktop. " +
                          "Kalau dimatikan, emot masuk seperti pesan biasa.", reactionSwitch),
                 Form.row("Cara mengirim pesan", "Klik ikon \(appDisplayName) di menu bar, atau ⌘-klik pet teman di desktop. " +
                          "Klik ikon sambil menahan pintasan di bawah untuk langsung membuka obrolan di menu bar. Klik kanan ikon untuk menu lengkap.", nil),
@@ -462,6 +462,7 @@ final class SettingsWindow: NSObject, NSTextFieldDelegate {
                 Form.row("Yang tidak dilakukan", "Tidak membaca layar, ketikan, berkas, atau aplikasi lain. Tidak meminta izin Aksesibilitas, " +
                          "Perekaman Layar, atau akses lain. Kode sumbernya terbuka.",
                          Form.button("Lihat kode", self, #selector(openSource))),
+                Form.row("Animasi emot", "Emot 3D yang bergerak memakai Fluent Emoji © Microsoft Corporation, lisensi MIT.", nil),
             ]),
             Form.section("Dukung \(appDisplayName)", [
                 Form.row("Traktir pembuatnya", "\(appDisplayName) gratis dan tanpa iklan. Dukungan lewat Sociabuzz membantu biaya server.",

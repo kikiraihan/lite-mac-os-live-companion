@@ -34,7 +34,7 @@ var reactions = map[string]string{
 	"clap":      "👏",
 	"wow":       "😮",
 	"party":     "🎉",
-	"fireworks": "🎆",
+	"fireworks": "🥳", // wajah berpesta + kembang api
 }
 
 func (s *Server) messageRoutes(mux *http.ServeMux) {

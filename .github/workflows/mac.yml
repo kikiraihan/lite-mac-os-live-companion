@@ -99,7 +99,7 @@ jobs:
           shot emot-wah false --demo --demo-reaction wow --demo-reaction-at 0.3
           shot emot-perayaan false --demo --demo-reaction party --demo-reaction-at 0.95
           shot emot-perayaan-turun true --demo --demo-reaction party --demo-reaction-at 1.8
-          shot emot-kembang-api true --demo --demo-reaction fireworks --demo-reaction-at 1.75
+          shot emot-hore true --demo --demo-reaction fireworks --demo-reaction-at 1.75
           shot emot-berulang false --demo --demo-reaction love
           shot balon-teman false --demo --demo-bubble
           shot samping-pet false --demo --demo-pet

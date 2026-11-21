@@ -3,17 +3,22 @@
 // emoji muncul memantul di atas kepala pet, bergoyang, naik, dan memudar — seperti reaksi di rapat video.
 // Pet pengirim tidak tampil di Mac itu → animasi di atas pet sendiri dengan label "dari Dina".
 //
+// Emojinya sendiri ikut bergerak (hati berdetak, jempol memompa, tangan bertepuk): animasi Microsoft Fluent Emoji
+// (lisensi MIT, Resources/Reactions, dibuat oleh scripts/fluent-reactions.py) diputar bingkai demi bingkai.
+// Emoji tanpa animasi Fluent (✨, ❗) memakai emoji sistem yang diam.
+//
 // Semuanya Core Animation (animasi berjalan di render server, halus di 60/120 Hz walau otak pet hanya 30 fps).
 // Lapisan satu emot dikelompokkan dalam satu CALayer yang ikut posisi x pet (Stage.layout) dan dibuang setelah selesai.
 // "Kurangi gerakan" (Aksesibilitas macOS) dihormati: hanya emoji yang muncul dan memudar, tanpa konfeti / kembang api.
 // Hanya menggambar di panggung milik Temu sendiri; tidak membaca apa pun dari layar.
 
 import AppKit
+import ImageIO
 import QuartzCore
 
 /// Emot lewat pet (urutan = urutan di baki). Nama sama dengan `reactions` di server/internal/app/messages.go.
 enum Reaction: String, CaseIterable, Identifiable {
-    case love, like, haha, clap, wow, party, fireworks
+    case clap, like, love, haha, wow, party, fireworks
 
     var id: String { rawValue }
 
@@ -25,7 +30,7 @@ enum Reaction: String, CaseIterable, Identifiable {
         case .clap: return "👏"
         case .wow: return "😮"
         case .party: return "🎉"
-        case .fireworks: return "🎆"
+        case .fireworks: return "🥳"
         }
     }
 
@@ -37,7 +42,7 @@ enum Reaction: String, CaseIterable, Identifiable {
         case .clap: return "Tepuk tangan"
         case .wow: return "Wah!"
         case .party: return "Perayaan"
-        case .fireworks: return "Kembang api"
+        case .fireworks: return "Hore!"
         }
     }
 
@@ -56,10 +61,41 @@ private enum Palette {
     static let confetti = [strawberry, lemon, leaf, orange, blue, white]
 }
 
-/// Emoji sistem (Apple Color Emoji) digambar sekali ke bitmap 2×, lalu dipakai ulang semua lapisan
+/// Gambar emot: animasi Fluent Emoji kalau ada, kalau tidak emoji sistem (Apple Color Emoji) yang diam
 enum ReactionArt {
     private static var cache: [String: CGImage] = [:]
     private static let side: CGFloat = 80
+
+    /// Emoji yang punya animasi Fluent Emoji: berkas di Resources/Reactions & jumlah bingkainya
+    /// (sama dengan hasil scripts/fluent-reactions.py; lembar 8 kolom, tiap bingkai 128×128, 24 fps)
+    private static let animated: [String: (file: String, frames: Int)] = [
+        "👏": ("clap", 28), "👍": ("like", 51), "❤️": ("love", 73), "💖": ("love2", 40), "😂": ("haha", 48),
+        "😮": ("wow", 73), "🎉": ("party", 61), "🥳": ("yay", 73),
+    ]
+    static let fps: Double = 24
+    private static var sheets: [String: [CGImage]] = [:]
+
+    /// Bingkai animasi emoji ini; nil = tidak punya animasi (atau berkasnya tidak ada) → pakai emoji(_:)
+    static func frames(_ e: String) -> [CGImage]? {
+        guard let a = animated[e] else { return nil }
+        if let f = sheets[a.file] { return f }
+        guard let url = Bundle.main.url(forResource: a.file, withExtension: "png", subdirectory: "Reactions"),
+              let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let raw = CGImageSourceCreateImageAtIndex(src, 0, nil),
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let ctx = CGContext(data: nil, width: raw.width, height: raw.height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        // lembar berpalet → RGBA sekali saja, supaya Core Animation tidak mengonversi tiap bingkai
+        ctx.draw(raw, in: CGRect(x: 0, y: 0, width: raw.width, height: raw.height))
+        guard let sheet = ctx.makeImage() else { return nil }
+        let side = 128, cols = 8
+        let out = (0..<a.frames).compactMap { i in
+            sheet.cropping(to: CGRect(x: (i % cols) * side, y: (i / cols) * side, width: side, height: side))
+        }
+        guard out.count == a.frames else { return nil }
+        sheets[a.file] = out
+        return out
+    }
 
     static func emoji(_ e: String) -> CGImage? {
         if let c = cache[e] { return c }
@@ -151,18 +187,17 @@ final class ReactionShow {
                  kf("position", [NSValue(point: c), NSValue(point: CGPoint(x: c.x, y: c.y + 14))])], delay: 0, dur: 2.2)
     }
 
-    /// ❤️ detak jantung besar + cahaya merah muda, lalu hati-hati kecil beterbangan
+    /// ❤️ hati besar berdetak + cahaya merah muda, lalu hati-hati kecil (berdetak & berkilau) beterbangan
     private func love() {
-        let c = CGPoint(x: 0, y: 44)
-        flash(at: c, color: Palette.strawberry, size: 120, peak: 0.55, delay: 0.05, dur: 1.1)
-        let hearts = ["❤️", "💕", "💖", "❤️", "💗", "❤️", "💘"]
-        for i in 0..<14 {
-            floater(hearts[i % hearts.count], size: .random(in: 15...30),
-                    from: CGPoint(x: CGFloat.random(in: -22...22), y: CGFloat.random(in: 28...44)), rise: .random(in: 150...250),
-                    sway: .random(in: 10...24), delay: 0.18 + Double(i) * 0.08 + .random(in: 0...0.06), dur: .random(in: 2.0...2.8))
+        let c = CGPoint(x: 0, y: 48)
+        flash(at: c, color: Palette.strawberry, size: 130, peak: 0.5, delay: 0.05, dur: 1.1)
+        for i in 0..<12 {
+            floater(i % 2 == 0 ? "❤️" : "💖", size: .random(in: 20...34),
+                    from: CGPoint(x: CGFloat.random(in: -22...22), y: CGFloat.random(in: 30...46)), rise: .random(in: 160...250),
+                    sway: .random(in: 10...24), delay: 0.2 + Double(i) * 0.09 + .random(in: 0...0.06), dur: .random(in: 2.1...2.9))
         }
-        hero("❤️", size: 50, at: c, dur: 2.9, hold: 0.5, rise: 120,
-             scale: tl(2.9, [(0, 0.1), (0.2, 1.3), (0.36, 1.0), (0.52, 1.22), (0.7, 1.0), (0.86, 1.12), (1.04, 1.0)]))
+        hero("❤️", size: 66, at: c, dur: 3.0, hold: 0.5, rise: 120,
+             scale: tl(3.0, [(0, 0.1), (0.2, 1.22), (0.34, 0.95), (0.46, 1.0)]))
     }
 
     /// 👍 jempol memompa dua kali, gelombang kuning + kilau memancar, dua jempol kecil menyusul
@@ -171,52 +206,43 @@ final class ReactionShow {
         ring(at: c, color: Palette.lemon, radius: 52, width: 3, delay: 0.12, dur: 0.6)
         radial("✨", at: c, count: 6, distance: 54, size: 15, delay: 0.14, dur: 0.8)
         for (i, d) in [0.55, 0.85, 1.15].enumerated() {
-            floater("👍", size: .random(in: 20...26), from: CGPoint(x: i % 2 == 0 ? -16 : 16, y: 38), rise: .random(in: 170...210),
+            floater("👍", size: .random(in: 24...30), from: CGPoint(x: i % 2 == 0 ? -16 : 16, y: 38), rise: .random(in: 170...210),
                     sway: 12, delay: d, dur: 2.2)
         }
-        hero("👍", size: 56, at: c, dur: 2.8, hold: 0.52, rise: 110,
-             scale: tl(2.8, [(0, 0), (0.2, 1.25), (0.33, 0.92), (0.45, 1.05), (0.6, 1.0), (1.0, 1.0), (1.14, 1.16), (1.3, 1.0)]),
-             rot: tl(2.8, [(0, -0.7), (0.22, 0.2), (0.36, -0.08), (0.55, 0), (1.0, 0), (1.14, -0.24), (1.32, 0)]))
+        hero("👍", size: 66, at: c, dur: 2.9, hold: 0.52, rise: 110,
+             scale: tl(2.9, [(0, 0), (0.2, 1.22), (0.33, 0.94), (0.45, 1.0)]),
+             rot: tl(2.9, [(0, -0.45), (0.22, 0.12), (0.36, 0)]))
     }
 
     /// 😂 wajah tertawa terguncang-guncang, disusul tawa kecil yang melompat-lompat naik
     private func haha() {
         let c = CGPoint(x: 0, y: 46)
         for i in 0..<7 {
-            floater("😂", size: .random(in: 19...32), from: CGPoint(x: CGFloat.random(in: -24...24), y: CGFloat.random(in: 34...44)),
+            floater("😂", size: .random(in: 22...34), from: CGPoint(x: CGFloat.random(in: -24...24), y: CGFloat.random(in: 34...44)),
                     rise: .random(in: 150...230), sway: .random(in: 8...16), delay: 0.25 + Double(i) * 0.13, dur: .random(in: 2.2...2.7),
-                    wobble: 0.1, jiggle: 0.22)
+                    wobble: 0.1, jiggle: 0.12)
         }
-        let dur = 2.8
-        hero("😂", size: 54, at: c, dur: dur, hold: 0.52, rise: 115,
-             scale: tl(dur, [(0, 0), (0.2, 1.2), (0.32, 0.94), (0.44, 1.05), (0.56, 1.0)]),
+        let dur = 2.9
+        hero("😂", size: 66, at: c, dur: dur, hold: 0.52, rise: 115,
+             scale: tl(dur, [(0, 0), (0.2, 1.2), (0.32, 0.94), (0.44, 1.0)]),
              rot: (series(48) { t in
                  let s = t * dur
-                 return s < 1.4 ? 0.24 * sin(2 * .pi * 6.5 * s) * (1 - s / 1.4) : 0
+                 return s < 1.2 ? 0.12 * sin(2 * .pi * 5 * s) * (1 - s / 1.2) : 0
              }, nil))
     }
 
-    /// 👏 lima kali tepuk (tiap tepuk: gelombang kecil), lalu tepuk tangan kecil ikut naik
+    /// 👏 tangan bertepuk (animasinya sendiri), gelombang & kilau kecil, lalu tepuk tangan kecil ikut naik
     private func clap() {
         let c = CGPoint(x: 0, y: 46)
-        let claps = [0.4, 0.62, 0.84, 1.06, 1.28]
-        for (i, t) in claps.enumerated() {
-            ring(at: c, color: Palette.lemon, radius: 38, width: 2.5, delay: t, dur: 0.42)
-            if i % 2 == 1 { radial("✨", at: c, count: 3, distance: 46, size: 12, delay: t, dur: 0.6) }
+        ring(at: c, color: Palette.lemon, radius: 44, width: 2.5, delay: 0.16, dur: 0.5)
+        radial("✨", at: c, count: 5, distance: 50, size: 13, delay: 0.2, dur: 0.75)
+        for i in 0..<5 {
+            floater("👏", size: .random(in: 22...30), from: CGPoint(x: CGFloat.random(in: -22...22), y: 38), rise: .random(in: 150...220),
+                    sway: 10, delay: 0.45 + Double(i) * 0.18, dur: 2.2)
         }
-        for i in 0..<4 {
-            floater("👏", size: .random(in: 18...26), from: CGPoint(x: CGFloat.random(in: -20...20), y: 38), rise: .random(in: 150...210),
-                    sway: 10, delay: 1.25 + Double(i) * 0.16, dur: 2.0)
-        }
-        var scale: [(Double, Double)] = [(0, 0), (0.16, 1.12), (0.24, 1.0)]
-        var rot: [(Double, Double)] = [(0, 0)]
-        for (i, t) in claps.enumerated() {
-            scale += [(t - 0.07, 0.86), (t, 1.18), (t + 0.1, 1.0)]
-            rot += [(t, i % 2 == 0 ? 0.12 : -0.12)]
-        }
-        rot.append((1.45, 0))
         let dur = 2.9
-        hero("👏", size: 54, at: c, dur: dur, hold: 0.52, rise: 110, scale: tl(dur, scale), rot: tl(dur, rot))
+        hero("👏", size: 66, at: c, dur: dur, hold: 0.52, rise: 110,
+             scale: tl(dur, [(0, 0), (0.18, 1.2), (0.3, 0.94), (0.42, 1.0)]))
     }
 
     /// 😮 kaget: wajah membesar mendadak dengan garis-garis kejut ala komik
@@ -227,11 +253,11 @@ final class ReactionShow {
             floater("❗", size: 20, from: CGPoint(x: x, y: 62), rise: 60, sway: 4, delay: 0.16 + Double(i) * 0.08, dur: 1.2, wobble: 0.25)
         }
         for i in 0..<3 {
-            floater("😮", size: .random(in: 18...24), from: CGPoint(x: CGFloat.random(in: -18...18), y: 40), rise: .random(in: 150...200),
+            floater("😮", size: .random(in: 22...28), from: CGPoint(x: CGFloat.random(in: -18...18), y: 40), rise: .random(in: 150...200),
                     sway: 10, delay: 0.7 + Double(i) * 0.2, dur: 2.0)
         }
         let dur = 2.6
-        hero("😮", size: 58, at: c, dur: dur, hold: 0.55, rise: 110,
+        hero("😮", size: 68, at: c, dur: dur, hold: 0.55, rise: 110,
              scale: tl(dur, [(0, 0), (0.14, 1.45), (0.28, 0.9), (0.4, 1.06), (0.5, 1.0)]))
     }
 
@@ -239,10 +265,10 @@ final class ReactionShow {
     private func party() {
         let at = CGPoint(x: -16, y: 34)
         let dur = 2.4
-        let popper = sprite("🎉", 50)
+        let popper = sprite("🎉", 62)
         popper.position = at
         let s = tl(dur, [(0, 0), (0.18, 1.1), (0.26, 1.0), (0.32, 1.0), (0.38, 1.28), (0.5, 0.95), (0.6, 1.0), (1.9, 1.0), (2.4, 0.6)])
-        let r = tl(dur, [(0, -0.2), (0.32, -0.2), (0.38, -0.4), (0.5, -0.12), (0.6, -0.2)])
+        let r = tl(dur, [(0, 0), (0.32, 0), (0.38, -0.16), (0.5, 0.06), (0.6, 0)])
         play(popper, [kf("transform.scale", s.0, s.1), kf("transform.rotation.z", r.0, r.1),
                       kf("opacity", [0, 1, 1, 0], [0, 0.05, 0.78, 1])], delay: 0, dur: dur)
         let mouth = CGPoint(x: -2, y: 50)
@@ -251,8 +277,10 @@ final class ReactionShow {
         floater("🥳", size: 30, from: CGPoint(x: 18, y: 40), rise: 150, sway: 10, delay: 0.6, dur: 2.3)
     }
 
-    /// 🎆 tiga roket meluncur dari kepala pet lalu pecah jadi kembang api berkilau
+    /// 🥳 hore: wajah berpesta di atas pet, empat roket meluncur lalu pecah jadi kembang api berkilau
     private func fireworks() {
+        hero("🥳", size: 64, at: CGPoint(x: 0, y: 46), dur: 3.0, hold: 0.6, rise: 90,
+             scale: tl(3.0, [(0, 0), (0.2, 1.2), (0.32, 0.95), (0.44, 1.0)]))
         shell(to: CGPoint(x: -56, y: 190), color: Palette.strawberry, inner: Palette.lemon, delay: 0)
         shell(to: CGPoint(x: 52, y: 228), color: Palette.lemon, inner: Palette.white, delay: 0.42)
         shell(to: CGPoint(x: -6, y: 262), color: Palette.leaf, inner: Palette.lemon, delay: 0.84)
@@ -285,9 +313,23 @@ final class ReactionShow {
              delay: 0, dur: 2.8)
     }
 
-    private func sprite(_ e: String, _ size: CGFloat, shadow: Bool = true) -> CALayer {
+    /// Lapisan satu emoji. Emoji dengan animasi Fluent ikut bergerak terus selama terlihat; `phase` = mulai dari
+    /// bingkai acak (emoji kecil yang banyak tidak bergerak serempak).
+    private func sprite(_ e: String, _ size: CGFloat, shadow: Bool = true, phase: Bool = false) -> CALayer {
         let l = CALayer()
-        l.contents = ReactionArt.emoji(e)
+        if let frames = ReactionArt.frames(e) {
+            l.contents = frames[0]
+            let a = CAKeyframeAnimation(keyPath: "contents")
+            a.values = frames
+            a.calculationMode = .discrete
+            a.duration = Double(frames.count) / ReactionArt.fps
+            a.repeatCount = .infinity
+            a.beginTime = t0
+            if phase { a.timeOffset = .random(in: 0..<a.duration) }
+            l.add(a, forKey: "frames")
+        } else {
+            l.contents = ReactionArt.emoji(e)
+        }
         l.contentsGravity = .resizeAspect
         l.minificationFilter = .trilinear
         l.bounds = CGRect(x: 0, y: 0, width: size, height: size)
@@ -322,7 +364,7 @@ final class ReactionShow {
     /// `jiggle` = guncangan cepat tambahan (untuk tawa).
     private func floater(_ e: String, size: CGFloat, from: CGPoint, rise: CGFloat, sway: CGFloat, delay: Double, dur: Double,
                          wobble: Double = 0.16, jiggle: Double = 0) {
-        let l = sprite(e, size)
+        let l = sprite(e, size, shadow: false, phase: true)
         l.position = from
         let phase = Double.random(in: 0...(2 * .pi))
         let freq = Double.random(in: 0.7...1.1)

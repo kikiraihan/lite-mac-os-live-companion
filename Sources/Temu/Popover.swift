@@ -572,6 +572,39 @@ struct EmojiKey: View {
     }
 }
 
+/// Gambar emot (Fluent Emoji 3D, sama dengan yang melayang di atas pet): diam di bingkai pertama,
+/// bergerak selama `playing` (mulai dari awal setiap kali). Tanpa berkas animasinya → emoji sistem.
+struct ReactionIcon: View {
+    let reaction: Reaction
+    var size: CGFloat
+    var playing = false
+    @State private var start = Date()
+
+    var body: some View {
+        Group {
+            if let frames = ReactionArt.frames(reaction.emoji) {
+                if playing {
+                    TimelineView(.animation(minimumInterval: 1 / ReactionArt.fps)) { ctx in
+                        let i = Int(max(0, ctx.date.timeIntervalSince(start)) * ReactionArt.fps) % frames.count
+                        still(frames[i])
+                    }
+                } else {
+                    still(frames[0])
+                }
+            } else {
+                Text(reaction.emoji).font(.system(size: size * 0.8))
+            }
+        }
+        .frame(width: size, height: size)
+        .onChange(of: playing) { on in if on { start = Date() } }
+        .onAppear { start = Date() }
+    }
+
+    private func still(_ img: CGImage) -> some View {
+        Image(decorative: img, scale: 2).resizable().interpolation(.high).frame(width: size, height: size)
+    }
+}
+
 /// Satu emot di baki: membesar saat disorot, memantul saat diklik, dan salinan kecilnya melayang naik
 /// (pratinjau kecil dari animasi yang muncul di layar teman)
 struct ReactionKey: View {
@@ -591,9 +624,8 @@ struct ReactionKey: View {
             puffs.append(id)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { puffs.removeAll { $0 == id } }
         } label: {
-            Text(reaction.emoji)
-                .font(.system(size: 26))
-                .scaleEffect(pressed ? 0.8 : (hover ? 1.22 : 1))
+            ReactionIcon(reaction: reaction, size: 34, playing: hover) // bergerak saat disorot, seperti di Zoom
+                .scaleEffect(pressed ? 0.8 : (hover ? 1.2 : 1))
                 .offset(y: hover ? -3 : 0)
                 .animation(.spring(response: 0.28, dampingFraction: 0.55), value: hover)
                 .animation(.spring(response: 0.22, dampingFraction: 0.45), value: pressed)
@@ -604,7 +636,7 @@ struct ReactionKey: View {
         .buttonStyle(.plain)
         .overlay {
             ZStack {
-                ForEach(puffs, id: \.self) { _ in ReactionPuff(emoji: reaction.emoji) }
+                ForEach(puffs, id: \.self) { _ in ReactionPuff(reaction: reaction) }
             }
             .allowsHitTesting(false)
         }
@@ -619,13 +651,12 @@ struct ReactionKey: View {
 
 /// Salinan kecil emot yang melayang naik dari tombolnya sambil membesar, lalu memudar
 struct ReactionPuff: View {
-    let emoji: String
+    let reaction: Reaction
     @State private var go = false
     @State private var drift = CGFloat.random(in: -14...14)
 
     var body: some View {
-        Text(emoji)
-            .font(.system(size: 22))
+        ReactionIcon(reaction: reaction, size: 28, playing: true)
             .scaleEffect(go ? 1.35 : 0.7)
             .offset(x: go ? drift : 0, y: go ? -72 : -6)
             .animation(.easeOut(duration: 0.9), value: go)
@@ -644,6 +675,8 @@ struct ReactionStamp: View {
     let replay: () -> Void
     @State private var hover = false
     @State private var shown: Bool
+    /// Emot yang baru datang bergerak sebentar, lalu diam (bergerak lagi saat disorot)
+    @State private var lively: Bool
 
     init(reaction: Reaction, mine: Bool, status: String?, fresh: Bool, replay: @escaping () -> Void) {
         self.reaction = reaction
@@ -651,13 +684,13 @@ struct ReactionStamp: View {
         self.status = status
         self.replay = replay
         _shown = State(initialValue: !fresh)
+        _lively = State(initialValue: fresh)
     }
 
     var body: some View {
         Button(action: replay) {
             VStack(alignment: mine ? .trailing : .leading, spacing: 0) {
-                Text(reaction.emoji)
-                    .font(.system(size: 34))
+                ReactionIcon(reaction: reaction, size: 42, playing: hover || lively)
                     .scaleEffect(shown ? (hover ? 1.1 : 1) : 0.3)
                     .rotationEffect(.degrees(hover ? (mine ? -6 : 6) : 0))
                     .animation(.spring(response: 0.38, dampingFraction: 0.5), value: shown)
@@ -674,7 +707,10 @@ struct ReactionStamp: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
-        .onAppear { if !shown { DispatchQueue.main.async { shown = true } } }
+        .onAppear {
+            if !shown { DispatchQueue.main.async { shown = true } }
+            if lively { DispatchQueue.main.asyncAfter(deadline: .now() + 3) { lively = false } }
+        }
         .accessibilityLabel("Emot \(reaction.title)" + (mine ? " dariku" : ""))
     }
 }
@@ -1104,7 +1140,7 @@ struct PopoverView: View {
         let name = model.current?.name ?? "teman"
         return VStack(spacing: 2) {
             HStack(spacing: 6) {
-                Text(hoveredReaction.map { "\($0.emoji)  \($0.title)" } ?? "Emot lewat pet")
+                Text(hoveredReaction?.title ?? "Emot lewat pet")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(hoveredReaction == nil ? Color.secondary : Color.primary)
                 Spacer(minLength: 4)
