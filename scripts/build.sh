@@ -21,6 +21,8 @@ else
 fi
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# animasi emot lewat pet (Fluent Emoji, MIT) — lisensinya ikut disalin
+cp -R Resources/Reactions "$APP/Contents/Resources/"
 
 echo "▶ Codesign (ad-hoc)..."
 codesign --force --sign - --identifier id.local.temu "$APP"

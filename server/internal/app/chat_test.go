@@ -451,3 +451,45 @@ func TestReceipts(t *testing.T) {
 		t.Fatalf("status lewat sync: %s", st)
 	}
 }
+
+// Emot lewat pet: {"reaction":…} disimpan sebagai pesan berisi emojinya (aplikasi lama tetap bisa membacanya),
+// dikirim real-time dengan "reaction", dan ikut di riwayat.
+func TestReactions(t *testing.T) {
+	s, ts := testServer(t, true)
+	kiki, dina := register(t, ts, "kiki"), register(t, ts, "dina")
+	kikiID, dinaID := userID(t, s, "kiki"), userID(t, s, "dina")
+	inv := kiki.must(201, "POST", "/api/friends/invites", nil)
+	dina.must(200, "POST", "/api/invites/"+inv["code"].(string)+"/accept", nil)
+	kmac, dmac := linkMac(t, ts, kiki), linkMac(t, ts, dina)
+	dws := dial(t, ts, dmac.bearer)
+	next(t, dws) // hello
+
+	// emot yang tidak dikenal → 422, walaupun text-nya terisi
+	kmac.must(422, "POST", "/api/app/messages/"+dinaID, map[string]any{"reaction": "bom", "text": "💣"})
+
+	// text diabaikan; isinya emoji dari daftar server
+	sent := kmac.must(201, "POST", "/api/app/messages/"+dinaID, map[string]any{"reaction": "party", "text": "abaikan"})
+	m := sent["message"].(map[string]any)
+	if m["reaction"] != "party" || m["text"] != "🎉" || m["status"] != "delivered" {
+		t.Fatalf("kirim emot: %v", m)
+	}
+	ev := next(t, dws)
+	if got := ev["message"].(map[string]any); ev["type"] != "message" || got["reaction"] != "party" || got["text"] != "🎉" {
+		t.Fatalf("kabar emot: %v", ev)
+	}
+
+	// pesan biasa tidak membawa "reaction"
+	plain := kmac.must(201, "POST", "/api/app/messages/"+dinaID, map[string]any{"text": "selamat ya"})["message"].(map[string]any)
+	if _, ok := plain["reaction"]; ok {
+		t.Fatalf("pesan biasa membawa reaction: %v", plain)
+	}
+
+	msgs := list(dmac.must(200, "GET", "/api/app/messages/"+kikiID, nil), "messages")
+	if len(msgs) != 2 || msgs[0].(map[string]any)["reaction"] != "party" || msgs[1].(map[string]any)["reaction"] != nil {
+		t.Fatalf("riwayat emot: %v", msgs)
+	}
+	// emot ikut dihitung belum dibaca, seperti pesan
+	if u := list(dmac.must(200, "GET", "/api/app/sync", nil), "unread"); len(u) != 1 || u[0].(map[string]any)["count"] != float64(2) {
+		t.Fatalf("unread emot: %v", u)
+	}
+}

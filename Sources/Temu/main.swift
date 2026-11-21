@@ -303,6 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         account.onMessage = { [weak self] id, m in self?.chat.receive(id, m) }
         account.onPresence = { [weak self] in self?.chat.refresh() }
         account.onReceipt = { [weak self] id, delivered, read in self?.chat.receipt(id, delivered: delivered, read: read) }
+        account.onReaction = { [weak self] id, r in self?.playReaction(r, friend: id, mine: false) ?? false }
         account.onUnread = { [weak self] from in
             guard let self else { return }
             self.barKey = ""
@@ -336,6 +337,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in
                 guard let self, let p = self.stage.barPet else { return }
                 self.stage.say(p, "Nanti malam jadi video call? 💛", seconds: 30, force: true, from: "Kiya")
+            }
+        }
+        // --demo-reaction <nama>: emot dari teman diputar berulang di atas pet untuk tangkapan layar CI (mis. party)
+        // --demo-reaction-at <detik>: diputar sekali dan dibekukan di detik itu, supaya tangkapan layarnya pasti
+        if let i = args.firstIndex(of: "--demo-reaction"), i + 1 < args.count, let r = Reaction.find(args[i + 1]) {
+            let at = args.firstIndex(of: "--demo-reaction-at").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil }
+            // pet dipanggil turun dulu supaya pasti terlihat (tidak sedang pergi mencari hadiah)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.stage.summon() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                if let at {
+                    self?.stage.react(r, owner: "d", label: "dari Dina", freezeAt: at)
+                    return
+                }
+                self?.playReaction(r, friend: "d", mine: false)
+                let t = Timer(timeInterval: 1.4, repeats: true) { [weak self] _ in self?.playReaction(r, friend: "d", mine: false) }
+                RunLoop.main.add(t, forMode: .common)
             }
         }
     }
@@ -559,6 +576,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         if chatPetTarget() != nil { openChatNearPet() } else { showPopover() }
     }
 
+    /// Emot lewat pet di desktop Mac ini, selalu di atas pet teman itu: emot darinya, atau emot yang baru kukirim
+    /// kepadanya (supaya aku ikut melihat yang dia lihat). Pet-nya tidak tampil → di atas pet-ku dengan label nama.
+    @discardableResult
+    func playReaction(_ r: Reaction, friend: String, mine: Bool) -> Bool {
+        let name = chat.friends.first(where: { $0.id == friend })?.name ?? account.friendName(friend)
+        return stage.react(r, owner: friend, label: mine ? "untuk \(name)" : "dari \(name)")
+    }
+
     @objc func openChatItem(_ it: NSMenuItem) {
         if let id = it.representedObject as? String { openChat(id) }
     }
@@ -568,6 +593,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         if Prefs.messageSound, Date().timeIntervalSince(lastSound) > 1.5 {
             lastSound = Date()
             NSSound(named: NSSound.Name(Prefs.messageSoundName))?.play()
+        }
+        // emot yang sudah diputar di atas pet pengirim sudah memberi tahu; tidak perlu balon "ada pesan"
+        if account.takeReacted(from) {
+            _ = account.takeIncoming(from)
+            return
         }
         let name = account.friendName(from)
         guard Prefs.petMessages == 1, stage.hasPet(from) else {

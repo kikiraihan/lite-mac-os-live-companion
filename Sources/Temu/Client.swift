@@ -96,6 +96,8 @@ struct ChatMessage: Codable {
     let mine: Bool
     /// Hanya pesanku: "sent" ✓, "delivered" ✓✓, "read" ✓✓ biru (nil di server lama / pesan masuk)
     var status: String? = nil
+    /// Emot lewat pet ("love", "party", … — Reactions.swift); nil = pesan biasa. `text` berisi emojinya.
+    var reaction: String? = nil
 
     /// Urutan status supaya hanya bisa naik (sent → delivered → read)
     static func rank(_ s: String?) -> Int {
@@ -188,6 +190,12 @@ final class Account {
     var onPresence: (() -> Void)?
     /// Pesanku ke teman sudah diterima / dibaca (id teman, diterima sampai id, dibaca sampai id)
     var onReceipt: ((String, Int?, Int?) -> Void)?
+    /// Emot dari teman lewat saluran real-time (id teman, emot) → animasi di atas pet-nya; true = berhasil diputar
+    var onReaction: ((String, Reaction) -> Bool)?
+
+    /// Teman yang emotnya baru saja diputar di atas pet: animasinya sudah jadi pemberitahuan, balon kata tidak perlu lagi
+    private var reacted: Set<String> = []
+    func takeReacted(_ friend: String) -> Bool { reacted.remove(friend) != nil }
 
     /// Isi pesan masuk terakhir per teman (dari saluran real-time), diambil sekali untuk balon kata pet
     private var lastIncoming: [String: String] = [:]
@@ -526,8 +534,17 @@ final class Account {
     }
 
     func sendMessage(_ friend: String, _ text: String, _ done: @escaping (ChatMessage?, String?) -> Void) {
+        postMessage(friend, ["text": text], done)
+    }
+
+    /// Emot lewat pet: tersimpan sebagai pesan berisi emojinya, dan diputar di atas pet-ku di Mac teman
+    func sendReaction(_ friend: String, _ r: Reaction, _ done: @escaping (ChatMessage?, String?) -> Void) {
+        postMessage(friend, ["reaction": r.rawValue], done)
+    }
+
+    private func postMessage(_ friend: String, _ body: [String: Any], _ done: @escaping (ChatMessage?, String?) -> Void) {
         guard let id = safeID(friend) else { return done(nil, "Teman tidak dikenal.") }
-        send(request("/api/app/messages/\(id)", method: "POST", body: ["text": text])) { [weak self] data, code in
+        send(request("/api/app/messages/\(id)", method: "POST", body: body)) { [weak self] data, code in
             guard code == 201, let data, let r = try? JSONDecoder().decode(SentResponse.self, from: data) else {
                 return done(nil, self?.errorText(data, code))
             }
@@ -654,8 +671,10 @@ final class Account {
             guard let friend = ev.friend_id, let m = ev.message else { return }
             if let n = ev.friend_name, !n.isEmpty { friendNames[friend] = n }
             onMessage?(friend, m)
+            // emot lewat pet: diputar di atas pet pengirim, juga saat obrolannya sedang dibuka
+            let played = !m.mine && (Reaction.find(m.reaction).map { onReaction?(friend, $0) ?? false } ?? false)
             if !m.mine, isViewing?(friend) != true {
-                lastIncoming[friend] = m.text
+                if played { reacted.insert(friend) } else { lastIncoming[friend] = m.text }
                 unread[friend, default: 0] += 1
                 onUnread?(friend)
             }
