@@ -29,6 +29,8 @@ type Server struct {
 	ipLimit    *security.Limiter
 	authLimit  *security.Limiter
 	loginLimit *security.Limiter
+	// reactLimit: emot lewat pet yang tidak disimpan (tidak tercatat di tabel messages) per pengirim → teman
+	reactLimit *security.Limiter
 	wake       chan struct{} // membangunkan worker generate
 	live       *hub          // saluran real-time ke aplikasi Mac (live.go)
 }
@@ -40,6 +42,7 @@ func New(conn *sql.DB, cfg config.Config) *Server {
 		ipLimit:    security.NewLimiter(600, 300),
 		authLimit:  security.NewLimiter(20, 10),
 		loginLimit: security.NewLimiter(2, 8),
+		reactLimit: security.NewLimiter(30, 15),
 		wake:       make(chan struct{}, 1),
 		live:       newHub(),
 	}

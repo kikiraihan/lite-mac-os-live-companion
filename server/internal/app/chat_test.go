@@ -467,8 +467,27 @@ func TestReactions(t *testing.T) {
 	// emot yang tidak dikenal → 422, walaupun text-nya terisi
 	kmac.must(422, "POST", "/api/app/messages/"+dinaID, map[string]any{"reaction": "bom", "text": "💣"})
 
-	// text diabaikan; isinya emoji dari daftar server
-	sent := kmac.must(201, "POST", "/api/app/messages/"+dinaID, map[string]any{"reaction": "party", "text": "abaikan"})
+	// bawaan: emot sesaat — hanya kabar real-time, tidak masuk riwayat / belum dibaca
+	quick := kmac.must(202, "POST", "/api/app/messages/"+dinaID, map[string]any{"reaction": "love"})
+	if quick["delivered"] != true {
+		t.Fatalf("emot sesaat: %v", quick)
+	}
+	if ev := next(t, dws); ev["type"] != "reaction" || ev["reaction"] != "love" || ev["friend_id"] != kikiID || ev["friend_name"] != "Kiki" {
+		t.Fatalf("kabar emot sesaat: %v", ev)
+	}
+	if msgs := list(dmac.must(200, "GET", "/api/app/messages/"+kikiID, nil), "messages"); len(msgs) != 0 {
+		t.Fatalf("emot sesaat tersimpan: %v", msgs)
+	}
+	// teman yang Mac-nya tidak tersambung (Raka) → tidak sampai, delivered false
+	off := kiki.must(201, "POST", "/api/friends/invites", nil)
+	raka := register(t, ts, "raka")
+	raka.must(200, "POST", "/api/invites/"+off["code"].(string)+"/accept", nil)
+	if q := kmac.must(202, "POST", "/api/app/messages/"+userID(t, s, "raka"), map[string]any{"reaction": "love"}); q["delivered"] != false {
+		t.Fatalf("emot ke teman offline: %v", q)
+	}
+
+	// "keep": disimpan sebagai pesan; text diabaikan, isinya emoji dari daftar server
+	sent := kmac.must(201, "POST", "/api/app/messages/"+dinaID, map[string]any{"reaction": "party", "text": "abaikan", "keep": true})
 	m := sent["message"].(map[string]any)
 	if m["reaction"] != "party" || m["text"] != "🎉" || m["status"] != "delivered" {
 		t.Fatalf("kirim emot: %v", m)

@@ -327,21 +327,29 @@ final class PopoverModel: ObservableObject {
 
     /// Emot lewat pet: animasinya langsung diputar di desktop Mac ini (di atas pet teman itu, atau pet-ku dengan label
     /// "untuk …"), lalu dikirim. Kolom tulis tidak tersentuh, jadi kalimat yang sedang diketik tetap aman.
+    /// Pengaturan › Pesan › Simpan emot di obrolan: mati (bawaan) = hanya sesaat, tidak masuk riwayat obrolan.
     func sendReaction(_ r: Reaction) {
         guard let id = selected, Date().timeIntervalSince(lastReaction) > 0.35 else { return }
         lastReaction = Date()
         app?.playReaction(r, friend: id, mine: true)
+        let keep = Prefs.reactionsInChat
         if demo {
+            guard keep else { return }
             merge(id, [ChatMessage(id: (threads[id]?.last?.id ?? 0) + 1, text: r.emoji, created_at: ISO8601DateFormatter().string(from: Date()),
                                    mine: true, status: "sent", reaction: r.rawValue)])
             return
         }
         guard let acc = app?.account else { return }
         error = nil
-        acc.sendReaction(id, r) { [weak self] m, err in
+        acc.sendReaction(id, r, keep: keep) { [weak self] m, delivered, err in
             guard let self else { return }
-            guard let m else { self.error = err ?? "Emot gagal terkirim. Coba lagi sebentar lagi."; return }
-            self.merge(id, [m])
+            if let err { self.error = err; return }
+            if let m { self.merge(id, [m]); return }
+            if !delivered, self.selected == id {
+                let name = self.current?.name ?? "Temanmu"
+                self.error = "\(name) sedang tidak tersambung, jadi emotnya tidak sampai. Nyalakan Pengaturan › Pesan › " +
+                    "Simpan emot di obrolan supaya emot tetap sampai saat Temu-nya dibuka."
+            }
         }
     }
 
