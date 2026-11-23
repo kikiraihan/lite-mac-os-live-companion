@@ -30,6 +30,9 @@ enum Prefs {
     }
     /// Emot dari teman (❤️ 👍 🎉 …) diputar sebagai animasi di atas pet pengirimnya (Reactions.swift)
     static var reactions: Bool { defaults.bool(forKey: "reactions") }
+    /// Emot yang kukirim ikut tersimpan di riwayat obrolan (dan tetap sampai walau teman offline).
+    /// Bawaan mati: emot hanya muncul sesaat di atas pet, seperti reaksi di Zoom.
+    static var reactionsInChat: Bool { defaults.bool(forKey: "reactionsInChat") }
     /// Bunyi saat pesan chat masuk
     static var messageSound: Bool { defaults.bool(forKey: "messageSound") }
     /// Pilihan bunyi bawaan macOS (urutan = tag pop-up di Pengaturan)
@@ -69,7 +72,7 @@ enum Prefs {
             "showDesktop": true, "petScale": 3, "liveliness": 1, "stageLevel": 0, "bubbles": true, "surprises": true,
             "followCursor": true, "sleepAtNight": true, "reminders": false, "reminderMinutes": 45, "species": "oren",
             "messageSound": true, "messageSoundIndex": 0, "hideChat": false, "petMessages": 0,
-            "unreadBadge": 0, "unreadWave": false, "chatPosition": 0, "chatClick": 0, "reactions": true,
+            "unreadBadge": 0, "unreadWave": false, "chatPosition": 0, "chatClick": 0, "reactions": true, "reactionsInChat": false,
         ])
     }
 }

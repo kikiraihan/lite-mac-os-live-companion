@@ -126,6 +126,11 @@ private struct SentResponse: Codable {
     let message: ChatMessage
 }
 
+/// Emot sesaat: tidak disimpan; delivered = sampai di minimal satu Mac teman yang sedang tersambung
+private struct ReactionResponse: Codable {
+    let delivered: Bool
+}
+
 private struct ErrorResponse: Codable {
     struct Body: Codable { let message: String }
     let error: Body
@@ -142,6 +147,8 @@ private struct LiveEvent: Codable {
     let online: Bool?
     /// "hello": id teman yang sedang online
     let online_friends: [String]?
+    /// "reaction": emot lewat pet sesaat (tidak disimpan di riwayat)
+    let reaction: String?
     /// "receipt": pesanku ke teman ini sampai id ini sudah diterima / dibaca
     let delivered_upto: Int?
     let read_upto: Int?
@@ -537,9 +544,17 @@ final class Account {
         postMessage(friend, ["text": text], done)
     }
 
-    /// Emot lewat pet: tersimpan sebagai pesan berisi emojinya, dan diputar di atas pet-ku di Mac teman
-    func sendReaction(_ friend: String, _ r: Reaction, _ done: @escaping (ChatMessage?, String?) -> Void) {
-        postMessage(friend, ["reaction": r.rawValue], done)
+    /// Emot lewat pet, diputar di atas pet-ku di Mac teman. `keep` = ikut tersimpan di riwayat obrolan
+    /// (done: pesannya); tanpa `keep` hanya sesaat (done: pesan nil, sampai / tidak di Mac teman yang tersambung).
+    func sendReaction(_ friend: String, _ r: Reaction, keep: Bool, _ done: @escaping (ChatMessage?, Bool, String?) -> Void) {
+        if keep { return postMessage(friend, ["reaction": r.rawValue, "keep": true]) { m, err in done(m, m != nil, err) } }
+        guard let id = safeID(friend) else { return done(nil, false, "Teman tidak dikenal.") }
+        send(request("/api/app/messages/\(id)", method: "POST", body: ["reaction": r.rawValue])) { [weak self] data, code in
+            guard code == 202, let data, let res = try? JSONDecoder().decode(ReactionResponse.self, from: data) else {
+                return done(nil, false, self?.errorText(data, code))
+            }
+            done(nil, res.delivered, nil)
+        }
     }
 
     private func postMessage(_ friend: String, _ body: [String: Any], _ done: @escaping (ChatMessage?, String?) -> Void) {
@@ -678,6 +693,12 @@ final class Account {
                 unread[friend, default: 0] += 1
                 onUnread?(friend)
             }
+        case "reaction":
+            // emot sesaat: hanya animasi, tidak masuk riwayat / belum dibaca
+            guard let friend = ev.friend_id, let r = Reaction.find(ev.reaction) else { return }
+            if let n = ev.friend_name, !n.isEmpty { friendNames[friend] = n }
+            // animasi tidak bisa diputar (dimatikan / desktop disembunyikan) → pet pengirim memberi tahu lewat balon kata
+            if onReaction?(friend, r) != true { onNudge?(friendName(friend), "\(r.emoji) \(r.title)") }
         case "read":
             if let friend = ev.friend_id, unread.removeValue(forKey: friend) != nil { onUnread?(nil) }
         case "nudge":

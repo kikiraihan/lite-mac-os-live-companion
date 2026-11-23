@@ -24,8 +24,14 @@ import (
 const maxMessage = 1000 // karakter
 
 // Emot lewat pet: dikirim dari baki emot di obrolan ({"reaction":"love"} sebagai ganti "text").
-// Aplikasi penerima memutar animasinya di atas pet pengirim. Kolom text diisi emojinya, jadi aplikasi
-// lama tetap menampilkannya sebagai pesan biasa. Daftar ini sama dengan `enum Reaction` di
+// Aplikasi penerima memutar animasinya di atas pet pengirim. Dua cara (Pengaturan aplikasi Mac ›
+// Pesan › Simpan emot di obrolan):
+//
+//	bawaan        hanya sesaat, seperti reaksi di Zoom: kabar "reaction" lewat saluran real-time, tidak
+//	              disimpan; teman yang sedang offline tidak menerimanya (balasan 202, "delivered").
+//	"keep":true   disimpan sebagai pesan (riwayat obrolan, belum dibaca, ✓✓). Kolom text diisi emojinya,
+//	              jadi aplikasi lama tetap menampilkannya sebagai pesan biasa. Daftar ini sama dengan `enum Reaction` di
+//
 // Sources/Temu/Reactions.swift (urutan tidak penting, nama harus sama).
 var reactions = map[string]string{
 	"love":      "❤️",
@@ -158,6 +164,7 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 	var req struct {
 		Text     string `json:"text"`
 		Reaction string `json:"reaction"` // emot lewat pet; kalau diisi, text diabaikan
+		Keep     bool   `json:"keep"`     // emot ikut disimpan di riwayat obrolan
 	}
 	if err := httpx.Decode(r, &req, 1<<13); err != nil {
 		return err
@@ -170,6 +177,9 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 			return httpx.Invalid("Emot itu belum dikenal server. Perbarui aplikasi Temu, lalu coba lagi.")
 		}
 		text, reaction = emoji, sql.NullString{String: req.Reaction, Valid: true}
+		if !req.Keep {
+			return s.sendReaction(w, r, friend, req.Reaction)
+		}
 	}
 	if text == "" {
 		return httpx.Invalid("Pesannya masih kosong. Tulis sesuatu dulu, lalu kirim.")
@@ -199,6 +209,18 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 	mine := myMessageJSON(id, text, reaction.String, at, status)
 	s.live.publish(p.UserID, map[string]any{"type": "message", "friend_id": friend, "message": mine})
 	httpx.JSON(w, 201, map[string]any{"message": mine})
+	return nil
+}
+
+// sendReaction: emot sesaat (tidak disimpan) → hanya ke Mac teman yang sedang tersambung.
+// "delivered": false = teman sedang tidak tersambung, emotnya tidak sampai.
+func (s *Server) sendReaction(w http.ResponseWriter, r *http.Request, friend, reaction string) error {
+	p := who(r)
+	if !s.reactLimit.Allow(p.UserID + ">" + friend) {
+		return httpx.Err(429, "rate_limited", "Pelan-pelan, emotmu sudah banyak sekali barusan. Tunggu sebentar, lalu kirim lagi.")
+	}
+	sent := s.live.publish(friend, map[string]any{"type": "reaction", "friend_id": p.UserID, "friend_name": p.Name, "reaction": reaction})
+	httpx.JSON(w, 202, map[string]any{"reaction": reaction, "delivered": sent > 0})
 	return nil
 }
 
