@@ -4,7 +4,8 @@
 // Sejak chat: token yang sama juga dipakai untuk pesan ke teman (/api/app/messages/…) dan saluran
 // real-time WebSocket (/api/app/ws) — tetap hanya /api/app/*.
 // Lampiran obrolan (gambar / file, server/internal/app/attachments.go): file hanya dibaca kalau dipilih sendiri
-// lewat panel Buka, dan hanya ditulis ke tempat yang dipilih lewat panel Simpan (Attachments.swift).
+// lewat panel Buka atau ditempel (⌘V) di kolom tulis, dan hanya ditulis ke tempat yang dipilih lewat panel Simpan
+// (Attachments.swift).
 
 import Cocoa
 import Security
@@ -615,45 +616,55 @@ final class Account {
     /// Batas ukuran lampiran (sama dengan maxAttachment di server)
     static let maxAttachment = 10 << 20
 
-    /// Kirim gambar / file yang dipilih lewat panel Buka. `once` = sekali lihat (sekali unduh).
+    /// Kirim gambar / file yang dipilih lewat panel Buka (atau disalin di Finder lalu ⌘V). `once` = sekali lihat (sekali unduh).
     /// done: pesannya + isi file (supaya gambar langsung tampil tanpa diunduh lagi), atau pesan galat.
     func sendFile(_ friend: String, _ file: URL, once: Bool, _ done: @escaping (ChatMessage?, Data?, String?) -> Void) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let values = try? file.resourceValues(forKeys: [.fileSizeKey, .isDirectoryKey])
+            let size = values?.fileSize ?? 0
+            let fail = { (msg: String) in DispatchQueue.main.async { done(nil, nil, msg) } }
+            if values?.isDirectory == true {
+                return fail("Folder belum bisa dikirim. Kompres dulu jadi .zip (klik kanan › Kompres di Finder), lalu kirim file .zip-nya.")
+            }
+            guard size <= Account.maxAttachment, let data = try? Data(contentsOf: file), data.count <= Account.maxAttachment else {
+                return fail(size > Account.maxAttachment
+                    ? "File terlalu besar. Maksimal \(Account.maxAttachment >> 20) MB per kiriman."
+                    : "File itu tidak bisa dibaca. Pilih file lain.")
+            }
+            DispatchQueue.main.async { // sesi dibuat & dipakai dari main thread saja
+                guard let self else { return }
+                self.sendData(friend, data, name: file.lastPathComponent, once: once, done)
+            }
+        }
+    }
+
+    /// Kirim isi file yang sudah ada di memori (mis. gambar dari clipboard). Dipanggil di main thread.
+    func sendData(_ friend: String, _ data: Data, name: String, once: Bool, _ done: @escaping (ChatMessage?, Data?, String?) -> Void) {
         guard let id = safeID(friend), var r = request("/api/app/messages/\(id)/files", method: "POST") else {
             return done(nil, nil, "Teman tidak dikenal.")
         }
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            guard size <= Account.maxAttachment, let data = try? Data(contentsOf: file), data.count <= Account.maxAttachment else {
-                let msg = size > Account.maxAttachment
-                    ? "File terlalu besar. Maksimal \(Account.maxAttachment >> 20) MB per kiriman."
-                    : "File itu tidak bisa dibaca. Pilih file lain."
-                return DispatchQueue.main.async { done(nil, nil, msg) }
-            }
-            guard !data.isEmpty else { return DispatchQueue.main.async { done(nil, nil, "File itu kosong (0 byte). Pilih file lain.") } }
-            let boundary = "temu-" + UUID().uuidString
-            let name = file.lastPathComponent.replacingOccurrences(of: "\"", with: "'")
-                .components(separatedBy: .newlines).joined()
-            var body = Data()
-            if once { body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"once\"\r\n\r\n1\r\n".data(using: .utf8)!) }
-            body.append(("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\n" +
-                         "Content-Type: application/octet-stream\r\n\r\n").data(using: .utf8)!)
-            body.append(data)
-            body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
-            r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-            let req = r
-            DispatchQueue.main.async { // sesi dibuat & dipakai dari main thread saja
-                guard let self else { return }
-                self.fileSession.uploadTask(with: req, from: body) { resData, resp, _ in
-                    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-                    DispatchQueue.main.async {
-                        guard code == 201, let resData, let res = try? JSONDecoder().decode(SentResponse.self, from: resData) else {
-                            return done(nil, nil, self.errorText(resData, code))
-                        }
-                        done(res.message, data, nil)
-                    }
-                }.resume()
-            }
+        guard !data.isEmpty else { return done(nil, nil, "File itu kosong (0 byte). Pilih file lain.") }
+        guard data.count <= Account.maxAttachment else {
+            return done(nil, nil, "File terlalu besar. Maksimal \(Account.maxAttachment >> 20) MB per kiriman.")
         }
+        let boundary = "temu-" + UUID().uuidString
+        let name = name.replacingOccurrences(of: "\"", with: "'").components(separatedBy: .newlines).joined()
+        var body = Data()
+        if once { body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"once\"\r\n\r\n1\r\n".data(using: .utf8)!) }
+        body.append(("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\n" +
+                     "Content-Type: application/octet-stream\r\n\r\n").data(using: .utf8)!)
+        body.append(data)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        fileSession.uploadTask(with: r, from: body) { [weak self] resData, resp, _ in
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            DispatchQueue.main.async {
+                guard code == 201, let resData, let res = try? JSONDecoder().decode(SentResponse.self, from: resData) else {
+                    return done(nil, nil, self?.errorText(resData, code) ?? "File gagal terkirim.")
+                }
+                done(res.message, data, nil)
+            }
+        }.resume()
     }
 
     /// Unduh isi lampiran. Pesan sekali lihat langsung terhapus dari server begitu berhasil diunduh.

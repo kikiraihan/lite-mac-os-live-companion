@@ -451,6 +451,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         if petPopover.isShown { petPopover.performClose(nil) }
     }
 
+    /// ⌘V / ⌃V (MainMenu.swift). Di kolom tulis obrolan: gambar / file di clipboard dikirim sebagai lampiran
+    /// (PopoverModel.pasteAttachment, dengan konfirmasi). Selain itu tempel biasa ke kolom yang sedang aktif.
+    @objc func pasteInChat(_ sender: Any?) {
+        if chatFieldActive, chat.pasteAttachment() { return }
+        NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
+    }
+
+    /// Kolom tulis obrolan sedang aktif (kursor ada di kolom teks di salah satu popover)
+    private var chatFieldActive: Bool {
+        guard let w = NSApp.keyWindow, let tv = w.firstResponder as? NSTextView, tv.isFieldEditor else { return false }
+        return [popover, petPopover].contains { $0.isShown && $0.contentViewController?.view.window === w }
+    }
+
     /// Panel Buka / Simpan untuk lampiran obrolan sedang terbuka: popover jangan tertutup karena klik di panel itu
     func holdPopovers(_ hold: Bool) {
         for p in [popover, petPopover] where p.isShown || !hold {
