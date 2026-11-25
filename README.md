@@ -48,7 +48,9 @@ hidup di desktop-nya.
   belum dibaca, dan bunyi pesan yang bisa diatur / dimatikan di Pengaturan → Umum → Pesan.
 - Kirim gambar & file di obrolan (tombol 📎, maksimal 10 MB): tersimpan di server **sehari**, lalu terhapus
   otomatis. Pilihan **sekali lihat** (seperti WhatsApp): hanya penerima yang bisa membuka, sekali saja, dan isinya
-  langsung dihapus dari server begitu dibuka.
+  langsung dihapus dari server begitu dibuka. Bisa juga **⌘V (atau ⌃V)** di kolom tulis: gambar di clipboard
+  (mis. tangkapan layar) atau file yang disalin di Finder ditanyakan dulu ("Kirim" / "Kirim sekali lihat"), teks
+  ditempel seperti biasa.
 
 **Admin** (`/admin`, akun & sesi terpisah dari pengguna)
 

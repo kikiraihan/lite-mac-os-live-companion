@@ -9,7 +9,7 @@
 //            tombol ✨ membuka baki emot lewat pet: klik = langsung terkirim, animasinya muncul di atas pet-ku
 //            di layar teman (Reactions.swift). Di obrolan emot tampil besar tanpa balon; klik = putar lagi.
 //            tombol 📎 mengirim gambar / file (biasa: ada di server sehari; sekali lihat: hilang setelah dibuka) —
-//            Attachments.swift
+//            Attachments.swift. ⌘V di kolom tulis: gambar / file di clipboard dikirim (setelah konfirmasi), teks ditempel.
 //   bawah  : aksi pet (makan, bola, panggil, tampil/sembunyi) lalu status akun, web, pengaturan, keluar
 // Pengaturan › Pesan › "Sembunyikan obrolan": obrolan tertutup jadi satu baris "Obrolan" sampai diklik (privasi).
 // Keterangan panjang hanya di tooltip. Klik kanan ikon tetap membuka menu lengkap (native).
@@ -397,21 +397,38 @@ final class PopoverModel: ObservableObject {
         return ok ? panel.url : nil
     }
 
-    func sendFile(_ url: URL, to id: String, once: Bool) {
+    func sendFile(_ url: URL, to id: String, once: Bool) { send([.file(url)], to: id, once: once) }
+
+    /// Yang dikirim sebagai lampiran: file di disk (panel Buka / disalin di Finder) atau isi dari clipboard
+    enum Upload {
+        case file(URL)
+        case data(Data, name: String)
+        var name: String {
+            switch self {
+            case .file(let u): return u.lastPathComponent
+            case .data(_, let n): return n
+            }
+        }
+    }
+
+    /// Kirim satu per satu; berhenti di yang pertama gagal (pesan galatnya tampil di bawah obrolan)
+    func send(_ items: [Upload], to id: String, once: Bool) {
+        guard let item = items.first else { return }
         if demo {
-            let a = ChatAttachment(kind: "file", name: url.lastPathComponent, mime: "application/octet-stream", size: 1000, once: once,
+            let a = ChatAttachment(kind: "file", name: item.name, mime: "application/octet-stream", size: 1000, once: once,
                                    expires_at: ISO8601DateFormatter().string(from: Date().addingTimeInterval(86400)), available: true)
             merge(id, [ChatMessage(id: (threads[id]?.last?.id ?? 0) + 1, text: "📎 " + a.name, created_at: ISO8601DateFormatter().string(from: Date()),
                                    mine: true, status: "sent", attachment: a)])
-            return
+            return send(Array(items.dropFirst()), to: id, once: once)
         }
-        guard let acc = app?.account, !uploading else { return }
+        guard let acc = app?.account else { return }
+        guard !uploading else { error = "Tunggu kiriman sebelumnya selesai dulu, lalu kirim lagi."; return }
         uploading = true
         error = nil
-        acc.sendFile(id, url, once: once) { [weak self] m, data, err in
+        let done: (ChatMessage?, Data?, String?) -> Void = { [weak self] m, data, err in
             guard let self else { return }
             self.uploading = false
-            guard let m else { self.error = err ?? "File gagal terkirim. Coba lagi."; return }
+            guard let m else { self.error = "\(item.name): " + (err ?? "gagal terkirim. Coba lagi."); return }
             // gambarku sendiri langsung tampil tanpa diunduh lagi (sekali lihat: pengirim pun tidak menyimpannya)
             if let data, let a = m.attachment, a.isImage, !a.once, let img = NSImage(data: data) {
                 self.images[m.id] = img
@@ -419,7 +436,72 @@ final class PopoverModel: ObservableObject {
             }
             self.merge(id, [m])
             self.focusToken += 1
+            self.send(Array(items.dropFirst()), to: id, once: once)
         }
+        switch item {
+        case .file(let url): acc.sendFile(id, url, once: once, done)
+        case .data(let data, let name): acc.sendData(id, data, name: name, once: once, done)
+        }
+    }
+
+    /// ⌘V di kolom tulis obrolan (MainMenu.swift → AppDelegate.pasteInChat). Clipboard hanya dibaca saat itu.
+    /// File yang disalin di Finder / gambar (tanpa teks) → tanya dulu, lalu kirim. Teks → false (ditempel biasa ke kolom).
+    func pasteAttachment() -> Bool {
+        guard linked, let id = selected else { return false }
+        let pb = NSPasteboard.general
+        var items: [Upload] = ((pb.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? [])
+            .map { .file($0) }
+        // ada teks (mis. dari Word / Pages yang juga menyertakan gambar halamannya) → tetap ditempel sebagai teks
+        if items.isEmpty, pb.string(forType: .string) == nil, let png = PopoverModel.clipboardPNG(pb) {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd 'pukul' HH.mm.ss"
+            items = [.data(png, name: "Gambar \(f.string(from: Date())).png")]
+        }
+        guard !items.isEmpty else { return false }
+        let name = current?.name ?? "temanmu"
+        DispatchQueue.main.async { [weak self] in // jangan menjalankan dialog di tengah pintasan keyboard
+            guard let self else { return }
+            let max = 10
+            guard items.count <= max else {
+                self.error = "Paling banyak \(max) file sekali tempel. Pilih lebih sedikit, lalu tempel lagi."
+                return
+            }
+            let a = NSAlert()
+            if case .data(let png, _) = items[0] {
+                a.messageText = "Kirim gambar ini ke \(name)?"
+                if let img = NSImage(data: png) {
+                    let v = NSImageView(frame: NSRect(x: 0, y: 0, width: 260, height: 170))
+                    v.image = img
+                    v.imageScaling = .scaleProportionallyDown
+                    a.accessoryView = v
+                }
+            } else {
+                a.messageText = items.count == 1 ? "Kirim \(items[0].name) ke \(name)?" : "Kirim \(items.count) file ke \(name)?"
+                if items.count > 1 { a.informativeText = items.map(\.name).joined(separator: "\n") + "\n\n" }
+            }
+            a.informativeText += "Tersimpan di server sehari, lalu terhapus otomatis. Sekali lihat: hanya bisa dibuka sekali oleh \(name)."
+            a.addButton(withTitle: "Kirim")
+            a.addButton(withTitle: "Kirim sekali lihat")
+            a.addButton(withTitle: "Batal").keyEquivalent = "\u{1b}"
+            self.app?.holdPopovers(true)
+            NSApp.activate(ignoringOtherApps: true)
+            let r = a.runModal()
+            self.app?.holdPopovers(false)
+            switch r {
+            case .alertFirstButtonReturn: self.send(items, to: id, once: false)
+            case .alertSecondButtonReturn: self.send(items, to: id, once: true)
+            default: break
+            }
+            self.focusToken += 1
+        }
+        return true
+    }
+
+    /// Gambar di clipboard sebagai PNG (tangkapan layar ⌃⇧⌘4, "Salin Gambar" di browser / Pratinjau)
+    private static func clipboardPNG(_ pb: NSPasteboard) -> Data? {
+        if let png = pb.data(forType: .png) { return png }
+        guard let tiff = pb.data(forType: .tiff), let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
     }
 
     /// Gambar lampiran tampil di obrolan → unduh sekali, simpan di memori

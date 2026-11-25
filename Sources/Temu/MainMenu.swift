@@ -1,7 +1,8 @@
 // Temu — menu utama tersembunyi.
 // Aplikasi menu bar (.accessory) tidak menampilkan menu utama, tapi tanpa menu Edit pintasan standar
 // (⌘C, ⌘V, ⌘X, ⌘A, ⌘Z) tidak sampai ke kolom tulis chat / kolom di Pengaturan. Menu ini hanya
-// meneruskan pintasan lewat responder chain; tidak ada yang dibaca dari luar aplikasi.
+// meneruskan pintasan lewat responder chain. Clipboard hanya dibaca saat pengguna sendiri menekan ⌘V / ⌃V
+// (Tempel), untuk ditempel ke kolom yang aktif atau dikirim sebagai lampiran obrolan.
 // macOS otomatis menambahkan "Emoji & Simbol" (⌃⌘Spasi) ke menu bernama Edit.
 
 import Cocoa
@@ -28,7 +29,17 @@ enum MainMenu {
         edit.addItem(.separator())
         edit.addItem(NSMenuItem(title: "Potong", action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
         edit.addItem(NSMenuItem(title: "Salin", action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
-        edit.addItem(NSMenuItem(title: "Tempel", action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        // ⌘V lewat AppDelegate: di kolom tulis obrolan, gambar / file di clipboard jadi lampiran; selain itu tempel biasa
+        let paste = NSMenuItem(title: "Tempel", action: #selector(AppDelegate.pasteInChat(_:)), keyEquivalent: "v")
+        paste.target = app
+        edit.addItem(paste)
+        // ⌃V juga, untuk yang terbiasa dengan Windows
+        let ctrlPaste = NSMenuItem(title: "Tempel", action: #selector(AppDelegate.pasteInChat(_:)), keyEquivalent: "v")
+        ctrlPaste.keyEquivalentModifierMask = [.control]
+        ctrlPaste.target = app
+        ctrlPaste.isHidden = true
+        ctrlPaste.allowsKeyEquivalentWhenHidden = true
+        edit.addItem(ctrlPaste)
         let plain = NSMenuItem(title: "Tempel sebagai teks biasa", action: #selector(NSTextView.pasteAsPlainText(_:)), keyEquivalent: "v")
         plain.keyEquivalentModifierMask = [.command, .option, .shift]
         edit.addItem(plain)

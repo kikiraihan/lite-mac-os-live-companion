@@ -53,7 +53,8 @@ jalankan `make sprites`. CI menolak kalau keduanya tidak sinkron.
 
 - **Aplikasi Mac hanya mainan.** Tidak boleh membaca layar, ketikan, clipboard, berkas pengguna, atau daftar
   jendela/aplikasi lain (satu-satunya pengecualian: lampiran obrolan — hanya file yang dipilih sendiri lewat panel
-  Buka yang dibaca, dan unduhan hanya ditulis ke tempat yang dipilih lewat panel Simpan, tidak pernah dibuka
+  Buka, atau isi clipboard saat pengguna sendiri menekan ⌘V / ⌃V di kolom tulis (selalu dengan konfirmasi sebelum
+  terkirim), yang dibaca; unduhan hanya ditulis ke tempat yang dipilih lewat panel Simpan, tidak pernah dibuka
   otomatis); tidak boleh meminta izin Aksesibilitas / Perekaman Layar / Input Monitoring; tidak
   menjalankan perintah shell selain yang sudah ada (ganti .app saat update). Posisi kursor
   (`NSEvent.mouseLocation`) boleh. Fitur "lucu" yang butuh izin sistem = tolak, tawarkan alternatif.
