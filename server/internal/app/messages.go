@@ -120,7 +120,9 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 	me := who(r).UserID
 	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
 	s.markDelivered(r.Context(), me, friend) // obrolan dibuka di Mac ini → pesan dari teman sudah sampai
-	rows, err := s.DB.QueryContext(r.Context(), `SELECT id, from_user, text, COALESCE(reaction, ''), created_at, delivered_at, read_at FROM messages
+	rows, err := s.DB.QueryContext(r.Context(), `SELECT id, from_user, text, COALESCE(reaction, ''), created_at, delivered_at, read_at,
+		attach_kind, COALESCE(attach_name, ''), COALESCE(attach_mime, ''), COALESCE(attach_size, 0), attach_once, attach_expires_at,
+		attach_opened_at IS NOT NULL, EXISTS (SELECT 1 FROM message_files f WHERE f.message_id=messages.id) FROM messages
 		WHERE LEAST(from_user, to_user)=LEAST($1::uuid, $2::uuid) AND GREATEST(from_user, to_user)=GREATEST($1::uuid, $2::uuid)
 		AND ($3::bigint = 0 OR id < $3) ORDER BY id DESC LIMIT 51`, me, friend, before)
 	if err != nil {
@@ -132,14 +134,23 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 		var id int64
 		var from, text, reaction string
 		var at time.Time
-		var delivered, read sql.NullTime
-		if err := rows.Scan(&id, &from, &text, &reaction, &at, &delivered, &read); err != nil {
+		var delivered, read, expires sql.NullTime
+		var kind sql.NullString
+		a := &attachment{}
+		if err := rows.Scan(&id, &from, &text, &reaction, &at, &delivered, &read,
+			&kind, &a.Name, &a.Mime, &a.Size, &a.Once, &expires, &a.Opened, &a.Available); err != nil {
 			return err
 		}
-		if from == me {
-			out = append(out, myMessageJSON(id, text, reaction, at, messageStatus(delivered, read)))
+		// lampiran (attachments.go): keterangannya tetap ada walau isinya sudah dihapus dari server
+		if kind.Valid {
+			a.Kind, a.ExpiresAt = kind.String, expires.Time
 		} else {
-			out = append(out, messageJSON(id, text, reaction, at, false))
+			a = nil
+		}
+		if from == me {
+			out = append(out, withAttachment(myMessageJSON(id, text, reaction, at, messageStatus(delivered, read)), a))
+		} else {
+			out = append(out, withAttachment(messageJSON(id, text, reaction, at, false), a))
 		}
 	}
 	if err := rows.Err(); err != nil {

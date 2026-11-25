@@ -52,7 +52,9 @@ jalankan `make sprites`. CI menolak kalau keduanya tidak sinkron.
 ## Aturan yang tidak boleh dilonggarkan
 
 - **Aplikasi Mac hanya mainan.** Tidak boleh membaca layar, ketikan, clipboard, berkas pengguna, atau daftar
-  jendela/aplikasi lain; tidak boleh meminta izin Aksesibilitas / Perekaman Layar / Input Monitoring; tidak
+  jendela/aplikasi lain (satu-satunya pengecualian: lampiran obrolan — hanya file yang dipilih sendiri lewat panel
+  Buka yang dibaca, dan unduhan hanya ditulis ke tempat yang dipilih lewat panel Simpan, tidak pernah dibuka
+  otomatis); tidak boleh meminta izin Aksesibilitas / Perekaman Layar / Input Monitoring; tidak
   menjalankan perintah shell selain yang sudah ada (ganti .app saat update). Posisi kursor
   (`NSEvent.mouseLocation`) boleh. Fitur "lucu" yang butuh izin sistem = tolak, tawarkan alternatif.
 - **Aplikasi Mac tidak pernah memegang password.** Hanya token perangkat dari alur kode
@@ -64,6 +66,8 @@ jalankan `make sprites`. CI menolak kalau keduanya tidak sinkron.
 - **API key provider AI** hanya masuk lewat admin, disimpan terenkripsi (`security.Seal`, `APP_SECRET`),
   tidak pernah dikirim balik ke klien dan tidak di-log.
 - **Foto pengguna dihapus** begitu generate selesai / gagal (`photo=NULL`). Jangan menambah penyimpanan foto.
+- **Lampiran obrolan** (`attachments.go`) hanya tersimpan sehari (`attachTTL`, dibersihkan `RunCleanup`), dan pesan
+  sekali lihat dihapus di permintaan unduh yang sama. Jangan memperpanjang masa simpan atau menyalinnya ke tempat lain.
 - Semua endpoint yang mengubah data lewat sesi cookie wajib CSRF (`s.user` / `s.admin` sudah mengurusnya).
 - CSP tanpa script inline; jangan pakai `v-html`.
 

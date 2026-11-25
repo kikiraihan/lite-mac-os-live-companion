@@ -8,6 +8,8 @@
 //            tombol 🙂 membuka panel emoji bawaan (Unicode, font emoji sistem); ⌘C/⌘V/⌘A lewat MainMenu.swift
 //            tombol ✨ membuka baki emot lewat pet: klik = langsung terkirim, animasinya muncul di atas pet-ku
 //            di layar teman (Reactions.swift). Di obrolan emot tampil besar tanpa balon; klik = putar lagi.
+//            tombol 📎 mengirim gambar / file (biasa: ada di server sehari; sekali lihat: hilang setelah dibuka) —
+//            Attachments.swift
 //   bawah  : aksi pet (makan, bola, panggil, tampil/sembunyi) lalu status akun, web, pengaturan, keluar
 // Pengaturan › Pesan › "Sembunyikan obrolan": obrolan tertutup jadi satu baris "Obrolan" sampai diklik (privasi).
 // Keterangan panjang hanya di tooltip. Klik kanan ikon tetap membuka menu lengkap (native).
@@ -87,6 +89,13 @@ final class PopoverModel: ObservableObject {
     private var revealNext = false
     /// Jeda kecil antar emot supaya klik beruntun tidak membanjiri layar teman
     private var lastReaction = Date.distantPast
+    /// Lampiran sedang diunggah
+    @Published private(set) var uploading = false
+    /// Gambar lampiran yang sudah diunduh (id pesan → gambar), hanya di memori; sekali lihat tidak pernah masuk sini
+    @Published private(set) var images: [Int: NSImage] = [:]
+    private var imageData: [Int: Data] = [:]
+    /// Lampiran yang sedang diunduh / dibuka
+    @Published private(set) var fetching: Set<Int> = []
 
     // MARK: status yang dibaca tampilan
 
@@ -252,6 +261,11 @@ final class PopoverModel: ObservableObject {
                     list[i].status = m.status
                     changed = true
                 }
+                // lampiran: "sudah dibuka / sudah dihapus" dari server menggantikan keterangan lama
+                if let na = m.attachment, let oa = list[i].attachment, oa.available, !na.available {
+                    list[i].attachment = na
+                    changed = true
+                }
             } else {
                 add.append(m)
             }
@@ -353,6 +367,163 @@ final class PopoverModel: ObservableObject {
         }
     }
 
+    // MARK: lampiran
+
+    /// 📎 → panel Buka macOS. Hanya file yang dipilih sendiri di panel ini yang dibaca.
+    func pickFile(once: Bool) {
+        guard let id = selected else { return }
+        let name = current?.name ?? "temanmu"
+        DispatchQueue.main.async { [weak self] in // tunggu menu 📎 tertutup dulu
+            guard let self else { return }
+            let panel = NSOpenPanel()
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+            panel.prompt = "Kirim"
+            panel.message = once
+                ? "Sekali lihat untuk \(name): hanya bisa dibuka sekali, lalu langsung terhapus dari server. Maksimal 10 MB."
+                : "Gambar atau file untuk \(name). Tersimpan di server sehari, lalu terhapus otomatis. Maksimal 10 MB."
+            guard let url = self.runPanel(panel) else { return }
+            self.sendFile(url, to: id, once: once)
+        }
+    }
+
+    /// Jalankan panel Buka / Simpan tanpa menutup popover
+    private func runPanel(_ panel: NSSavePanel) -> URL? {
+        app?.holdPopovers(true)
+        NSApp.activate(ignoringOtherApps: true)
+        let ok = panel.runModal() == .OK
+        app?.holdPopovers(false)
+        return ok ? panel.url : nil
+    }
+
+    func sendFile(_ url: URL, to id: String, once: Bool) {
+        if demo {
+            let a = ChatAttachment(kind: "file", name: url.lastPathComponent, mime: "application/octet-stream", size: 1000, once: once,
+                                   expires_at: ISO8601DateFormatter().string(from: Date().addingTimeInterval(86400)), available: true)
+            merge(id, [ChatMessage(id: (threads[id]?.last?.id ?? 0) + 1, text: "📎 " + a.name, created_at: ISO8601DateFormatter().string(from: Date()),
+                                   mine: true, status: "sent", attachment: a)])
+            return
+        }
+        guard let acc = app?.account, !uploading else { return }
+        uploading = true
+        error = nil
+        acc.sendFile(id, url, once: once) { [weak self] m, data, err in
+            guard let self else { return }
+            self.uploading = false
+            guard let m else { self.error = err ?? "File gagal terkirim. Coba lagi."; return }
+            // gambarku sendiri langsung tampil tanpa diunduh lagi (sekali lihat: pengirim pun tidak menyimpannya)
+            if let data, let a = m.attachment, a.isImage, !a.once, let img = NSImage(data: data) {
+                self.images[m.id] = img
+                self.imageData[m.id] = data
+            }
+            self.merge(id, [m])
+            self.focusToken += 1
+        }
+    }
+
+    /// Gambar lampiran tampil di obrolan → unduh sekali, simpan di memori
+    func loadImage(_ m: ChatMessage) {
+        guard !demo, let friend = selected, let a = m.attachment, a.isImage, !a.once, a.live,
+              images[m.id] == nil, !fetching.contains(m.id), let acc = app?.account else { return }
+        fetching.insert(m.id)
+        acc.downloadFile(friend, message: m.id) { [weak self] data, code, _ in
+            guard let self else { return }
+            self.fetching.remove(m.id)
+            if code == 410 || code == 404 { return self.markGone(friend, m.id, opened: false) }
+            guard let data, let img = NSImage(data: data) else { return }
+            self.images[m.id] = img
+            self.imageData[m.id] = data
+        }
+    }
+
+    /// Lampiran diklik: gambar → jendela besar; file → panel Simpan; sekali lihat → dibuka sekali lalu terhapus dari server
+    func openAttachment(_ m: ChatMessage) {
+        guard let friend = selected, let a = m.attachment, a.live else { return }
+        if !a.once {
+            if a.isImage, let img = images[m.id] { return ImageViewer.show(img, title: a.name, once: false) }
+            if a.isImage { return loadImage(m) } // belum terunduh: tampil di obrolan dulu
+            return saveAttachment(m)
+        }
+        guard !m.mine, !fetching.contains(m.id) else { return }
+        let name = current?.name ?? "teman"
+        if demo { return markGone(friend, m.id, opened: true) }
+        guard let acc = app?.account else { return }
+        if a.isImage {
+            fetching.insert(m.id)
+            acc.downloadFile(friend, message: m.id) { [weak self] data, code, err in
+                guard let self else { return }
+                self.fetching.remove(m.id)
+                if code == 200 || code == 410 || code == 404 { self.markGone(friend, m.id, opened: code == 200) }
+                guard let data, let img = NSImage(data: data) else {
+                    self.error = err ?? "Foto sekali lihat ini tidak bisa dibuka."
+                    return
+                }
+                ImageViewer.show(img, title: "Foto sekali lihat dari \(name)", once: true)
+            }
+            return
+        }
+        // file sekali unduh: pilih tempatnya dulu, karena setelah diunduh isinya sudah tidak ada di server
+        guard let dest = askSaveLocation(a.name, once: true) else { return }
+        fetching.insert(m.id)
+        acc.downloadFile(friend, message: m.id) { [weak self] data, code, err in
+            guard let self else { return }
+            self.fetching.remove(m.id)
+            if code == 200 || code == 410 || code == 404 { self.markGone(friend, m.id, opened: code == 200) }
+            guard let data else { self.error = err ?? "File ini tidak bisa diunduh."; return }
+            self.write(data, to: dest)
+        }
+    }
+
+    /// Simpan lampiran biasa (gambar / file) ke tempat yang dipilih di panel Simpan
+    func saveAttachment(_ m: ChatMessage) {
+        guard let friend = selected, let a = m.attachment, a.live, !a.once, !fetching.contains(m.id),
+              let dest = askSaveLocation(a.name, once: false) else { return }
+        if let data = imageData[m.id] { return write(data, to: dest) }
+        guard !demo, let acc = app?.account else { return }
+        fetching.insert(m.id)
+        acc.downloadFile(friend, message: m.id) { [weak self] data, code, err in
+            guard let self else { return }
+            self.fetching.remove(m.id)
+            if code == 410 || code == 404 { self.markGone(friend, m.id, opened: false) }
+            guard let data else { self.error = err ?? "File ini tidak bisa diunduh."; return }
+            self.write(data, to: dest)
+        }
+    }
+
+    private func askSaveLocation(_ name: String, once: Bool) -> URL? {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = name
+        panel.prompt = "Simpan"
+        if once { panel.message = "File sekali unduh: setelah disimpan, isinya langsung terhapus dari server." }
+        panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        return runPanel(panel)
+    }
+
+    /// Tulis ke tempat pilihan pengguna, lalu tunjukkan di Finder (tidak dibuka otomatis)
+    private func write(_ data: Data, to dest: URL) {
+        do {
+            try data.write(to: dest, options: .atomic)
+            NSWorkspace.shared.activateFileViewerSelecting([dest])
+        } catch {
+            self.error = "Gagal menyimpan ke \(dest.lastPathComponent). Pilih folder lain, lalu coba lagi."
+        }
+    }
+
+    /// Isi lampiran sudah tidak ada di server (sekali lihat dibuka, atau lewat sehari)
+    private func markGone(_ friend: String, _ id: Int, opened: Bool) {
+        guard var list = threads[friend], let i = list.firstIndex(where: { $0.id == id }), var a = list[i].attachment else { return }
+        a.available = false
+        if opened { a.opened = true }
+        list[i].attachment = a
+        threads[friend] = list
+        images[id] = nil
+        imageData[id] = nil
+    }
+
+    /// Kabar "file_opened": pesan sekali lihat dengan teman ini sudah dibuka (oleh teman, atau di Mac lain milikku)
+    func fileOpened(_ friend: String, message: Int) { markGone(friend, message, opened: true) }
+
     /// Emot di obrolan diklik → putar lagi animasinya di desktop
     func replay(_ r: Reaction, mine: Bool) {
         guard let id = selected else { return }
@@ -405,6 +576,13 @@ final class PopoverModel: ObservableObject {
             ChatMessage(id: 7, text: "Sampai jam 8!", created_at: iso(1), mine: true, status: "sent"),
             // contoh emot lewat pet
             ChatMessage(id: 8, text: "❤️", created_at: iso(0.5), mine: false, reaction: "love"),
+            // contoh lampiran: file biasa (ada sehari) dan foto sekali lihat
+            ChatMessage(id: 9, text: "📎 jadwal-liburan.pdf", created_at: iso(0.4), mine: true, status: "read",
+                        attachment: ChatAttachment(kind: "file", name: "jadwal-liburan.pdf", mime: "application/pdf", size: 248_000,
+                                                   once: false, expires_at: iso(-1439), available: true)),
+            ChatMessage(id: 10, text: "📷 Foto sekali lihat", created_at: iso(0.2), mine: false,
+                        attachment: ChatAttachment(kind: "image", name: "foto.jpg", mime: "image/jpeg", size: 812_000,
+                                                   once: true, expires_at: iso(-1439), available: true)),
         ]
         threads["r"] = []
         hasMore = ["d": false, "r": false]
@@ -985,7 +1163,13 @@ struct PopoverView: View {
                         }
                         let tail = i == msgs.count - 1 || msgs[i + 1].mine != m.mine
                         Group {
-                            if let r = Reaction.find(m.reaction) { reactionStamp(m, r, tail: tail) } else { bubble(m, tail: tail) }
+                            if let a = m.attachment {
+                                attachmentBubble(m, a, tail: tail)
+                            } else if let r = Reaction.find(m.reaction) {
+                                reactionStamp(m, r, tail: tail)
+                            } else {
+                                bubble(m, tail: tail)
+                            }
                         }
                         .id(m.id)
                     }
@@ -1041,6 +1225,26 @@ struct PopoverView: View {
             }
     }
 
+    /// Lampiran di obrolan (Attachments.swift): gambar kecil / kartu file, di sisi pengirimnya
+    private func attachmentBubble(_ m: ChatMessage, _ a: ChatAttachment, tail: Bool) -> some View {
+        AttachmentBubble(message: m, attachment: a, image: model.images[m.id], busy: model.fetching.contains(m.id),
+                         open: { model.openAttachment(m) }, save: { model.saveAttachment(m) })
+            .frame(maxWidth: 250, alignment: m.mine ? .trailing : .leading)
+            .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
+            .padding(.bottom, tail ? 6 : 0)
+            .onAppear { model.loadImage(m) }
+            .help(PopoverView.timeFormat.string(from: m.date) + (m.mine ? ReceiptTicks.label(m.status) : "") + "\n" + attachmentHelp(m, a))
+    }
+
+    private func attachmentHelp(_ m: ChatMessage, _ a: ChatAttachment) -> String {
+        if a.once {
+            if m.mine { return "Sekali lihat: hanya \(model.current?.name ?? "temanmu") yang bisa membuka, sekali saja." }
+            return a.live ? "Sekali lihat: setelah dibuka, isinya langsung terhapus dari server." : "Sekali lihat"
+        }
+        if !a.live { return "Lampiran hanya tersimpan sehari di server." }
+        return a.isImage ? "Klik untuk melihat lebih besar. Klik kanan › Simpan… untuk menyimpan." : "Klik untuk menyimpan file ini."
+    }
+
     /// Emot lewat pet di obrolan: tanpa balon, di sisi pengirimnya
     private func reactionStamp(_ m: ChatMessage, _ r: Reaction, tail: Bool) -> some View {
         ReactionStamp(reaction: r, mine: m.mine, status: m.status, fresh: Date().timeIntervalSince(m.date) < 10) {
@@ -1093,6 +1297,24 @@ struct PopoverView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 7)
                 .background(Capsule().fill(Color.primary.opacity(0.06)))
+            if model.uploading {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 22, height: 30)
+                    .help("Mengirim lampiran…")
+            } else {
+                Menu {
+                    Button("Gambar atau file…") { model.pickFile(once: false) }
+                    Button("Sekali lihat…") { model.pickFile(once: true) }
+                } label: {
+                    Image(systemName: "paperclip")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .frame(width: 22, height: 30)
+                .help("Kirim gambar atau file ke \(name). Tersimpan sehari di server; sekali lihat terhapus setelah dibuka.")
+            }
             Button {
                 showReactions.toggle()
                 if showReactions { showEmoji = false }
