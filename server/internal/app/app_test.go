@@ -87,6 +87,8 @@ func (c *client) do(method, path string, body any) (int, map[string]any) {
 	case nil:
 	case *bytes.Buffer:
 		rd = b
+	case *multipartBody: // lampiran obrolan (attachments_test.go)
+		rd, ct = b.buf, b.ct
 	default:
 		j, _ := json.Marshal(b)
 		rd, ct = bytes.NewReader(j), "application/json"

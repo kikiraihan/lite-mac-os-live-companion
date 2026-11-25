@@ -46,6 +46,9 @@ hidup di desktop-nya.
   dan pengaturan di bawahnya. **⌘-klik pet teman** di desktop membuka obrolan dengannya. Klik kanan ikon tetap
   membuka menu lengkap. Pesan sampai real-time lewat WebSocket; ada titik merah di ikon menu bar saat ada pesan
   belum dibaca, dan bunyi pesan yang bisa diatur / dimatikan di Pengaturan → Umum → Pesan.
+- Kirim gambar & file di obrolan (tombol 📎, maksimal 10 MB): tersimpan di server **sehari**, lalu terhapus
+  otomatis. Pilihan **sekali lihat** (seperti WhatsApp): hanya penerima yang bisa membuka, sekali saja, dan isinya
+  langsung dihapus dari server begitu dibuka.
 
 **Admin** (`/admin`, akun & sesi terpisah dari pengguna)
 

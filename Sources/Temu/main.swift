@@ -304,6 +304,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
         account.onPresence = { [weak self] in self?.chat.refresh() }
         account.onReceipt = { [weak self] id, delivered, read in self?.chat.receipt(id, delivered: delivered, read: read) }
         account.onReaction = { [weak self] id, r in self?.playReaction(r, friend: id, mine: false) ?? false }
+        account.onFileOpened = { [weak self] id, msg in self?.chat.fileOpened(id, message: msg) }
         account.onUnread = { [weak self] from in
             guard let self else { return }
             self.barKey = ""
@@ -448,6 +449,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
     func closePopover() {
         if popover.isShown { popover.performClose(nil) }
         if petPopover.isShown { petPopover.performClose(nil) }
+    }
+
+    /// Panel Buka / Simpan untuk lampiran obrolan sedang terbuka: popover jangan tertutup karena klik di panel itu
+    func holdPopovers(_ hold: Bool) {
+        for p in [popover, petPopover] where p.isShown || !hold {
+            p.behavior = hold ? .applicationDefined : .transient
+        }
     }
 
     func popoverDidClose(_ n: Notification) {

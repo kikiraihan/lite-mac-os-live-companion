@@ -3,6 +3,8 @@
 // di web, lalu disimpan di Keychain. Token itu hanya bisa membaca daftar pet + sapaan teman.
 // Sejak chat: token yang sama juga dipakai untuk pesan ke teman (/api/app/messages/…) dan saluran
 // real-time WebSocket (/api/app/ws) — tetap hanya /api/app/*.
+// Lampiran obrolan (gambar / file, server/internal/app/attachments.go): file hanya dibaca kalau dipilih sendiri
+// lewat panel Buka, dan hanya ditulis ke tempat yang dipilih lewat panel Simpan (Attachments.swift).
 
 import Cocoa
 import Security
@@ -98,6 +100,8 @@ struct ChatMessage: Codable {
     var status: String? = nil
     /// Emot lewat pet ("love", "party", … — Reactions.swift); nil = pesan biasa. `text` berisi emojinya.
     var reaction: String? = nil
+    /// Lampiran (gambar / file); nil = pesan biasa. `text` berisi labelnya ("📷 Foto", "📎 laporan.pdf").
+    var attachment: ChatAttachment? = nil
 
     /// Urutan status supaya hanya bisa naik (sent → delivered → read)
     static func rank(_ s: String?) -> Int {
@@ -115,6 +119,33 @@ struct ChatMessage: Codable {
         f.formatOptions = [.withInternetDateTime]
         return f.date(from: created_at) ?? Date()
     }
+}
+
+/// Lampiran sebuah pesan. Isinya tersimpan di server paling lama sehari; `once` = sekali lihat / sekali unduh
+/// (hanya penerima, sekali, lalu langsung dihapus dari server).
+struct ChatAttachment: Codable {
+    /// "image" (tampil di obrolan) atau "file"
+    let kind: String
+    let name: String
+    let mime: String
+    let size: Int
+    let once: Bool
+    let expires_at: String
+    /// Sekali lihat: sudah dibuka penerimanya
+    var opened: Bool? = nil
+    /// Isinya masih ada di server
+    var available: Bool
+
+    var isImage: Bool { kind == "image" }
+    var expires: Date {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: expires_at) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: expires_at) ?? Date()
+    }
+    /// Masih bisa diunduh: ada di server dan belum lewat masanya
+    var live: Bool { available && expires > Date() }
 }
 
 private struct MessagesResponse: Codable {
@@ -152,6 +183,8 @@ private struct LiveEvent: Codable {
     /// "receipt": pesanku ke teman ini sampai id ini sudah diterima / dibaca
     let delivered_upto: Int?
     let read_upto: Int?
+    /// "file_opened": pesan sekali lihat ini sudah dibuka penerimanya
+    let message_id: Int?
 }
 
 private struct LinkStart: Codable {
@@ -199,6 +232,8 @@ final class Account {
     var onReceipt: ((String, Int?, Int?) -> Void)?
     /// Emot dari teman lewat saluran real-time (id teman, emot) → animasi di atas pet-nya; true = berhasil diputar
     var onReaction: ((String, Reaction) -> Bool)?
+    /// Pesan sekali lihat sudah dibuka penerimanya (id teman, id pesan) → isinya sudah dihapus dari server
+    var onFileOpened: ((String, Int) -> Void)?
 
     /// Teman yang emotnya baru saja diputar di atas pet: animasinya sudah jadi pemberitahuan, balon kata tidak perlu lagi
     private var reacted: Set<String> = []
@@ -263,6 +298,16 @@ final class Account {
         let c = URLSessionConfiguration.ephemeral
         c.timeoutIntervalForRequest = 20
         c.httpCookieStorage = nil
+        return URLSession(configuration: c)
+    }()
+
+    /// Sesi khusus unggah / unduh lampiran: file sampai 10 MB butuh waktu lebih lama dari permintaan biasa
+    private lazy var fileSession: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.timeoutIntervalForRequest = 60
+        c.timeoutIntervalForResource = 600
+        c.httpCookieStorage = nil
+        c.urlCache = nil
         return URLSession(configuration: c)
     }()
 
@@ -567,6 +612,65 @@ final class Account {
         }
     }
 
+    /// Batas ukuran lampiran (sama dengan maxAttachment di server)
+    static let maxAttachment = 10 << 20
+
+    /// Kirim gambar / file yang dipilih lewat panel Buka. `once` = sekali lihat (sekali unduh).
+    /// done: pesannya + isi file (supaya gambar langsung tampil tanpa diunduh lagi), atau pesan galat.
+    func sendFile(_ friend: String, _ file: URL, once: Bool, _ done: @escaping (ChatMessage?, Data?, String?) -> Void) {
+        guard let id = safeID(friend), var r = request("/api/app/messages/\(id)/files", method: "POST") else {
+            return done(nil, nil, "Teman tidak dikenal.")
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            guard size <= Account.maxAttachment, let data = try? Data(contentsOf: file), data.count <= Account.maxAttachment else {
+                let msg = size > Account.maxAttachment
+                    ? "File terlalu besar. Maksimal \(Account.maxAttachment >> 20) MB per kiriman."
+                    : "File itu tidak bisa dibaca. Pilih file lain."
+                return DispatchQueue.main.async { done(nil, nil, msg) }
+            }
+            guard !data.isEmpty else { return DispatchQueue.main.async { done(nil, nil, "File itu kosong (0 byte). Pilih file lain.") } }
+            let boundary = "temu-" + UUID().uuidString
+            let name = file.lastPathComponent.replacingOccurrences(of: "\"", with: "'")
+                .components(separatedBy: .newlines).joined()
+            var body = Data()
+            if once { body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"once\"\r\n\r\n1\r\n".data(using: .utf8)!) }
+            body.append(("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\n" +
+                         "Content-Type: application/octet-stream\r\n\r\n").data(using: .utf8)!)
+            body.append(data)
+            body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+            r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            let req = r
+            DispatchQueue.main.async { // sesi dibuat & dipakai dari main thread saja
+                guard let self else { return }
+                self.fileSession.uploadTask(with: req, from: body) { resData, resp, _ in
+                    let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                    DispatchQueue.main.async {
+                        guard code == 201, let resData, let res = try? JSONDecoder().decode(SentResponse.self, from: resData) else {
+                            return done(nil, nil, self.errorText(resData, code))
+                        }
+                        done(res.message, data, nil)
+                    }
+                }.resume()
+            }
+        }
+    }
+
+    /// Unduh isi lampiran. Pesan sekali lihat langsung terhapus dari server begitu berhasil diunduh.
+    /// done: (isi, status HTTP; 410 = sudah dihapus dari server, pesan galat)
+    func downloadFile(_ friend: String, message: Int, _ done: @escaping (Data?, Int, String?) -> Void) {
+        guard let id = safeID(friend), let r = request("/api/app/messages/\(id)/files/\(message)") else {
+            return done(nil, 0, "Teman tidak dikenal.")
+        }
+        fileSession.dataTask(with: r) { [weak self] data, resp, _ in
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            DispatchQueue.main.async {
+                guard code == 200, let data else { return done(nil, code, self?.errorText(data, code) ?? "Gagal mengunduh.") }
+                done(data, code, nil)
+            }
+        }.resume()
+    }
+
     /// Sembunyikan / tampilkan status online akun ini dari teman. `done(nil)` = tersimpan, selain itu pesan galat.
     func setHidePresence(_ hide: Bool, _ done: @escaping (String?) -> Void) {
         send(request("/api/app/presence", method: "PUT", body: ["hidden": hide])) { [weak self] data, code in
@@ -703,6 +807,9 @@ final class Account {
             if let friend = ev.friend_id, unread.removeValue(forKey: friend) != nil { onUnread?(nil) }
         case "nudge":
             sync(force: true)
+        case "file_opened":
+            guard let friend = ev.friend_id, let id = ev.message_id else { return }
+            onFileOpened?(friend, id)
         case "receipt":
             guard let friend = ev.friend_id else { return }
             onReceipt?(friend, ev.delivered_upto, ev.read_upto)
