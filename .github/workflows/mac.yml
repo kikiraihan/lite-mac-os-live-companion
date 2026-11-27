@@ -91,6 +91,8 @@ jobs:
           shot obrolan-tersembunyi false --demo --demo-hidden
           shot emoji false --demo --demo-emoji
           shot emot false --demo --demo-react
+          shot pratinjau-tempel false --demo --demo-preview
+          shot pratinjau-potong true --demo --demo-preview-crop
           # emot lewat pet: dibekukan di detik tertentu supaya bisa dibandingkan antar-commit
           shot emot-sayang false --demo --demo-reaction love --demo-reaction-at 1.0
           shot emot-mantap true --demo --demo-reaction like --demo-reaction-at 0.5

@@ -9,7 +9,8 @@
 //            tombol ✨ membuka baki emot lewat pet: klik = langsung terkirim, animasinya muncul di atas pet-ku
 //            di layar teman (Reactions.swift). Di obrolan emot tampil besar tanpa balon; klik = putar lagi.
 //            tombol 📎 mengirim gambar / file (biasa: ada di server sehari; sekali lihat: hilang setelah dibuka) —
-//            Attachments.swift. ⌘V di kolom tulis: gambar / file di clipboard dikirim (setelah konfirmasi), teks ditempel.
+//            Attachments.swift. ⌘V di kolom tulis: gambar / file di clipboard tampil di pratinjau dulu (SendPreview.swift:
+//            potong / putar, tombol "1" sekali lihat), lalu dikirim; teks ditempel.
 //   bawah  : aksi pet (makan, bola, panggil, tampil/sembunyi) lalu status akun, web, pengaturan, keluar
 // Pengaturan › Pesan › "Sembunyikan obrolan": obrolan tertutup jadi satu baris "Obrolan" sampai diklik (privasi).
 // Keterangan panjang hanya di tooltip. Klik kanan ikon tetap membuka menu lengkap (native).
@@ -445,7 +446,7 @@ final class PopoverModel: ObservableObject {
     }
 
     /// ⌘V di kolom tulis obrolan (MainMenu.swift → AppDelegate.pasteInChat). Clipboard hanya dibaca saat itu.
-    /// File yang disalin di Finder / gambar (tanpa teks) → tanya dulu, lalu kirim. Teks → false (ditempel biasa ke kolom).
+    /// File yang disalin di Finder / gambar (tanpa teks) → pratinjau dulu (SendPreview.swift), lalu kirim. Teks → false (ditempel biasa ke kolom).
     func pasteAttachment() -> Bool {
         guard linked, let id = selected else { return false }
         let pb = NSPasteboard.general
@@ -466,35 +467,24 @@ final class PopoverModel: ObservableObject {
                 self.error = "Paling banyak \(max) file sekali tempel. Pilih lebih sedikit, lalu tempel lagi."
                 return
             }
-            let a = NSAlert()
-            if case .data(let png, _) = items[0] {
-                a.messageText = "Kirim gambar ini ke \(name)?"
-                if let img = NSImage(data: png) {
-                    let v = NSImageView(frame: NSRect(x: 0, y: 0, width: 260, height: 170))
-                    v.image = img
-                    v.imageScaling = .scaleProportionallyDown
-                    a.accessoryView = v
-                }
-            } else {
-                a.messageText = items.count == 1 ? "Kirim \(items[0].name) ke \(name)?" : "Kirim \(items.count) file ke \(name)?"
-                if items.count > 1 { a.informativeText = items.map(\.name).joined(separator: "\n") + "\n\n" }
-            }
-            a.informativeText += "Tersimpan di server sehari, lalu terhapus otomatis. Sekali lihat: hanya bisa dibuka sekali oleh \(name)."
-            a.addButton(withTitle: "Kirim")
-            a.addButton(withTitle: "Kirim sekali lihat")
-            a.addButton(withTitle: "Batal").keyEquivalent = "\u{1b}"
+            // pratinjau dulu (SendPreview.swift): gambar bisa dipotong / diputar, tombol "1" = sekali lihat
             self.app?.holdPopovers(true)
-            NSApp.activate(ignoringOtherApps: true)
-            let r = a.runModal()
+            let r = SendPreview.run(items, to: name)
             self.app?.holdPopovers(false)
-            switch r {
-            case .alertFirstButtonReturn: self.send(items, to: id, once: false)
-            case .alertSecondButtonReturn: self.send(items, to: id, once: true)
-            default: break
-            }
+            if let r { self.send(r.items, to: id, once: r.once) }
             self.focusToken += 1
         }
         return true
+    }
+
+    /// --demo-preview / --demo-preview-crop: pratinjau tempel gambar dengan gambar contoh (tangkapan layar CI)
+    func previewDemo(cropping: Bool) {
+        guard demo, let id = selected, let tiff = NSApp.applicationIconImage?.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) else { return }
+        app?.holdPopovers(true)
+        let r = SendPreview.run([.data(png, name: "Gambar contoh.png")], to: current?.name ?? "temanmu", demo: cropping)
+        app?.holdPopovers(false)
+        if let r { send(r.items, to: id, once: r.once) }
     }
 
     /// Gambar di clipboard sebagai PNG (tangkapan layar ⌃⇧⌘4, "Salin Gambar" di browser / Pratinjau)
