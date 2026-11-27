@@ -263,6 +263,32 @@ struct PreviewView: View {
     }
 }
 
+/// Ikon sekali lihat: angka 1 di dalam lingkaran berdetak seperti pengatur waktu
+/// (busur penuh + titik-titik di ujungnya). Warnanya mengikuti foregroundStyle.
+struct OnceIcon: View {
+    var size: CGFloat = 18
+    var lineWidth: CGFloat = 1.6
+
+    var body: some View {
+        ZStack {
+            Group {
+                Circle()
+                    .trim(from: 0, to: 0.74)
+                    .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                // "detik" yang tersisa: titik-titik sebelum kembali ke angka 12
+                Circle()
+                    .trim(from: 0.79, to: 0.97)
+                    .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [0.01, lineWidth * 2.2]))
+            }
+            .rotationEffect(.degrees(-90)) // mulai dari atas, berputar searah jarum jam
+            Text("1")
+                .font(.system(size: size * 0.52, weight: .bold, design: .rounded))
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Tombol "1" sekali lihat, seperti WhatsApp: transparan = mati, putih = menyala
 struct OnceToggle: View {
     @Binding var on: Bool
@@ -271,9 +297,7 @@ struct OnceToggle: View {
         Button { on.toggle() } label: {
             ZStack {
                 Circle().fill(on ? Color.white : Color.white.opacity(0.08))
-                Circle().strokeBorder(Color.white.opacity(on ? 0 : 0.55), lineWidth: 1.5)
-                Text("1")
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                OnceIcon(size: 20, lineWidth: 1.6)
                     .foregroundStyle(on ? Brand.ink : Color.white.opacity(0.75))
             }
             .frame(width: 30, height: 30)

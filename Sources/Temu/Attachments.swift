@@ -106,6 +106,8 @@ struct AttachmentBubble: View {
                 Circle().fill(mine ? Brand.ink.opacity(0.12) : Color.primary.opacity(0.08))
                 if busy {
                     ProgressView().controlSize(.small)
+                } else if attachment.symbol == "1.circle" {
+                    OnceIcon(size: 18) // sama dengan tombol "1" di pratinjau (SendPreview.swift)
                 } else {
                     Image(systemName: attachment.symbol)
                         .font(.system(size: 15, weight: .medium))
