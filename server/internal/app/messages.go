@@ -122,7 +122,7 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 	s.markDelivered(r.Context(), me, friend) // obrolan dibuka di Mac ini → pesan dari teman sudah sampai
 	rows, err := s.DB.QueryContext(r.Context(), `SELECT id, from_user, text, COALESCE(reaction, ''), created_at, delivered_at, read_at,
 		attach_kind, COALESCE(attach_name, ''), COALESCE(attach_mime, ''), COALESCE(attach_size, 0), attach_once, attach_expires_at,
-		attach_opened_at IS NOT NULL, EXISTS (SELECT 1 FROM message_files f WHERE f.message_id=messages.id) FROM messages
+		attach_opened_at IS NOT NULL, EXISTS (SELECT 1 FROM message_files f WHERE f.message_id=messages.id), e2e FROM messages
 		WHERE LEAST(from_user, to_user)=LEAST($1::uuid, $2::uuid) AND GREATEST(from_user, to_user)=GREATEST($1::uuid, $2::uuid)
 		AND ($3::bigint = 0 OR id < $3) ORDER BY id DESC LIMIT 51`, me, friend, before)
 	if err != nil {
@@ -137,8 +137,9 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 		var delivered, read, expires sql.NullTime
 		var kind sql.NullString
 		a := &attachment{}
+		var e2e []byte
 		if err := rows.Scan(&id, &from, &text, &reaction, &at, &delivered, &read,
-			&kind, &a.Name, &a.Mime, &a.Size, &a.Once, &expires, &a.Opened, &a.Available); err != nil {
+			&kind, &a.Name, &a.Mime, &a.Size, &a.Once, &expires, &a.Opened, &a.Available, &e2e); err != nil {
 			return err
 		}
 		// lampiran (attachments.go): keterangannya tetap ada walau isinya sudah dihapus dari server
@@ -147,10 +148,11 @@ func (s *Server) appMessages(w http.ResponseWriter, r *http.Request) error {
 		} else {
 			a = nil
 		}
+		// pesan terenkripsi (e2e.go): isinya hanya bisa dibuka Mac yang diberi amplop
 		if from == me {
-			out = append(out, withAttachment(myMessageJSON(id, text, reaction, at, messageStatus(delivered, read)), a))
+			out = append(out, withE2E(withAttachment(myMessageJSON(id, text, reaction, at, messageStatus(delivered, read)), a), e2e))
 		} else {
-			out = append(out, withAttachment(messageJSON(id, text, reaction, at, false), a))
+			out = append(out, withE2E(withAttachment(messageJSON(id, text, reaction, at, false), a), e2e))
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -176,11 +178,21 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 		Text     string `json:"text"`
 		Reaction string `json:"reaction"` // emot lewat pet; kalau diisi, text diabaikan
 		Keep     bool   `json:"keep"`     // emot ikut disimpan di riwayat obrolan
+		// pesan terenkripsi ujung ke ujung (e2e.go); kalau diisi, text diabaikan
+		E2E *e2eEnvelope `json:"e2e"`
 	}
-	if err := httpx.Decode(r, &req, 1<<13); err != nil {
+	if err := httpx.Decode(r, &req, 1<<16); err != nil {
 		return err
 	}
 	text := clean(req.Text, maxMessage)
+	p := who(r)
+	var e2e []byte
+	if req.E2E != nil && req.Reaction == "" {
+		if e2e, err = s.checkEnvelope(r.Context(), p.UserID, p.DeviceID, friend, req.E2E); err != nil {
+			return err
+		}
+		text = e2eTextLabel
+	}
 	var reaction sql.NullString
 	if req.Reaction != "" {
 		emoji, ok := reactions[req.Reaction]
@@ -195,7 +207,6 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 	if text == "" {
 		return httpx.Invalid("Pesannya masih kosong. Tulis sesuatu dulu, lalu kirim.")
 	}
-	p := who(r)
 	var recent int
 	s.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM messages WHERE from_user=$1 AND to_user=$2 AND created_at > now() - interval '1 minute'`,
 		p.UserID, friend).Scan(&recent)
@@ -204,20 +215,20 @@ func (s *Server) appSendMessage(w http.ResponseWriter, r *http.Request) error {
 	}
 	var id int64
 	var at time.Time
-	if err := s.DB.QueryRowContext(r.Context(), `INSERT INTO messages(from_user, to_user, text, reaction) VALUES($1,$2,$3,$4) RETURNING id, created_at`,
-		p.UserID, friend, text, reaction).Scan(&id, &at); err != nil {
+	if err := s.DB.QueryRowContext(r.Context(), `INSERT INTO messages(from_user, to_user, text, reaction, e2e) VALUES($1,$2,$3,$4,$5) RETURNING id, created_at`,
+		p.UserID, friend, text, reaction, nullJSON(e2e)).Scan(&id, &at); err != nil {
 		return err
 	}
 	// ke teman (semua Mac-nya) dan ke Mac lain milik pengirim, supaya jendela chat di sana ikut bertambah
 	status := "sent"
 	if s.live.publish(friend, map[string]any{"type": "message", "friend_id": p.UserID, "friend_name": p.Name,
-		"message": messageJSON(id, text, reaction.String, at, false)}) > 0 {
+		"message": withE2E(messageJSON(id, text, reaction.String, at, false), e2e)}) > 0 {
 		// minimal satu Mac teman sedang tersambung dan menerimanya → langsung ✓✓
 		if _, err := s.DB.ExecContext(r.Context(), `UPDATE messages SET delivered_at=now() WHERE id=$1`, id); err == nil {
 			status = "delivered"
 		}
 	}
-	mine := myMessageJSON(id, text, reaction.String, at, status)
+	mine := withE2E(myMessageJSON(id, text, reaction.String, at, status), e2e)
 	s.live.publish(p.UserID, map[string]any{"type": "message", "friend_id": friend, "message": mine})
 	httpx.JSON(w, 201, map[string]any{"message": mine})
 	return nil

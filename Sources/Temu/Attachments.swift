@@ -1,5 +1,6 @@
 // Temu — lampiran di obrolan: gambar & file (server/internal/app/attachments.go).
-//   📎 di kolom tulis → "Gambar atau file…" / "Sekali lihat…" → panel Buka macOS (hanya file yang dipilih sendiri dibaca)
+//   📎 di kolom tulis → panel Buka macOS (hanya file yang dipilih sendiri dibaca) → pratinjau (SendPreview.swift):
+//                  gambar bisa dipotong / diputar, tombol "1" = sekali lihat; sama dengan lampiran yang ditempel (⌘V)
 //   biasa        : tersimpan di server paling lama sehari, lalu terhapus otomatis. Gambar tampil di obrolan
 //                  (klik = jendela besar), file disimpan lewat panel Simpan. Isi tidak pernah dibuka otomatis.
 //   sekali lihat : seperti WhatsApp — hanya penerima, hanya sekali; isinya terhapus dari server begitu dibuka.

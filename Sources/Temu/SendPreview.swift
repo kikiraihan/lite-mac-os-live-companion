@@ -1,4 +1,5 @@
-// Temu — pratinjau sebelum mengirim lampiran yang ditempel (⌘V / ⌃V di kolom tulis obrolan, Popover.swift).
+// Temu — pratinjau sebelum mengirim lampiran: yang ditempel (⌘V / ⌃V di kolom tulis obrolan, Popover.swift)
+// maupun yang dipilih lewat tombol 📎 — satu tampilan untuk keduanya, tidak ada pertanyaan "sekali lihat?" terpisah.
 //   satu gambar  : tampil besar; bisa dipotong (seret untuk membuat kotak, seret pojoknya untuk mengubah ukuran,
 //                  seret isinya untuk menggeser) dan diputar 90°. Tanpa diubah → file aslinya yang terkirim.
 //   file lain    : daftar nama file yang akan dikirim.
@@ -16,12 +17,12 @@ enum SendPreview {
         let once: Bool
     }
 
-    /// Jendela modal; nil = batal. `demo` hanya untuk tangkapan layar CI (--demo-preview-crop):
-    /// mulai dalam mode potong dengan sekali lihat menyala.
-    static func run(_ items: [PopoverModel.Upload], to name: String, demo: Bool = false) -> Result? {
+    /// Jendela modal; nil = batal. `once` = tombol "1" sudah menyala.
+    /// `demo` hanya untuk tangkapan layar CI (--demo-preview-crop): mulai dalam mode potong dengan sekali lihat menyala.
+    static func run(_ items: [PopoverModel.Upload], to name: String, once: Bool = false, demo: Bool = false) -> Result? {
         let image = items.count == 1 ? loadImage(items[0]) : nil
         let state = PreviewState(items: items, image: image, cropping: demo && image != nil)
-        state.once = demo
+        state.once = once || demo
         var size = NSSize(width: 460, height: 360)
         if let image {
             let w = CGFloat(image.width), h = CGFloat(image.height)
@@ -183,25 +184,58 @@ struct PreviewView: View {
         .frame(minWidth: 420, minHeight: 300)
     }
 
+    /// File (bukan gambar): tanpa potong / putar, hanya keterangan + tombol "1" sekali lihat di bawah.
+    /// Satu file = ikon besar di tengah; beberapa file = daftar.
     private var fileList: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(state.items.enumerated()), id: \.offset) { _, item in
-                    HStack(spacing: 10) {
-                        Image(systemName: item.isFile ? "doc" : "photo")
-                            .font(.system(size: 18))
-                            .frame(width: 28)
-                        Text(item.name)
-                            .font(.system(size: 13))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+        Group {
+            if state.items.count == 1, let item = state.items.first {
+                VStack(spacing: 10) {
+                    fileIcon(item, size: 64)
+                    Text(item.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .truncationMode(.middle)
+                    Text(item.sizeText)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .padding(24)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("\(state.items.count) file")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.6))
+                        ForEach(Array(state.items.enumerated()), id: \.offset) { _, item in
+                            HStack(spacing: 10) {
+                                fileIcon(item, size: 28)
+                                Text(item.name)
+                                    .font(.system(size: 13))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer(minLength: 8)
+                                Text(item.sizeText)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
         }
         .foregroundStyle(.white)
+    }
+
+    /// Ikon jenis file dari macOS (hanya dari nama/jenisnya, isi file tidak dibaca)
+    private func fileIcon(_ item: PopoverModel.Upload, size: CGFloat) -> some View {
+        let type = UTType(filenameExtension: (item.name as NSString).pathExtension) ?? .data
+        return Image(nsImage: NSWorkspace.shared.icon(for: type))
+            .resizable()
+            .interpolation(.high)
+            .frame(width: size, height: size)
     }
 
     private var bar: some View {
@@ -415,5 +449,15 @@ extension PopoverModel.Upload {
     var isFile: Bool {
         if case .file = self { return true }
         return false
+    }
+
+    /// "248 KB" (file di disk: dari keterangannya, bukan isinya)
+    var sizeText: String {
+        let bytes: Int
+        switch self {
+        case .file(let url): bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        case .data(let d, _): bytes = d.count
+        }
+        return ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 }
