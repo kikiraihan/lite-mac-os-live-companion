@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -135,6 +136,22 @@ func (s *Server) appSendFile(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	p := who(r)
+	// terenkripsi ujung ke ujung (e2e.go): isi file = ciphertext, nama & jenis aslinya ada di dalam amplop.
+	// Server hanya tahu foto atau file ("kind" dari aplikasi) supaya obrolan bisa menulis "📷 Foto".
+	var e2e []byte
+	if raw := r.FormValue("e2e"); raw != "" {
+		var env e2eEnvelope
+		if json.Unmarshal([]byte(raw), &env) != nil {
+			return httpx.Invalid("Pesan terenkripsinya rusak. Perbarui aplikasi Temu, lalu coba lagi.")
+		}
+		if e2e, err = s.checkEnvelope(r.Context(), p.UserID, p.DeviceID, friend, &env); err != nil {
+			return err
+		}
+		kind, name, mt = "file", "File terenkripsi", "application/octet-stream"
+		if r.FormValue("kind") == "image" {
+			kind, name = "image", "Foto"
+		}
+	}
 	var recent int
 	s.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM messages WHERE from_user=$1 AND to_user=$2 AND created_at > now() - interval '1 minute'`,
 		p.UserID, friend).Scan(&recent)
@@ -158,9 +175,9 @@ func (s *Server) appSendFile(w http.ResponseWriter, r *http.Request) error {
 	defer tx.Rollback()
 	var id int64
 	var at time.Time
-	if err := tx.QueryRowContext(r.Context(), `INSERT INTO messages(from_user, to_user, text, attach_kind, attach_name, attach_mime, attach_size, attach_once, attach_expires_at)
-		VALUES($1,$2,$3,$4,$5,$6,$7,$8, now() + $9 * interval '1 second') RETURNING id, created_at, attach_expires_at`,
-		p.UserID, friend, text, kind, name, mt, len(data), once, int(attachTTL/time.Second)).Scan(&id, &at, &a.ExpiresAt); err != nil {
+	if err := tx.QueryRowContext(r.Context(), `INSERT INTO messages(from_user, to_user, text, attach_kind, attach_name, attach_mime, attach_size, attach_once, attach_expires_at, e2e)
+		VALUES($1,$2,$3,$4,$5,$6,$7,$8, now() + $9 * interval '1 second', $10) RETURNING id, created_at, attach_expires_at`,
+		p.UserID, friend, text, kind, name, mt, len(data), once, int(attachTTL/time.Second), nullJSON(e2e)).Scan(&id, &at, &a.ExpiresAt); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(r.Context(), `INSERT INTO message_files(message_id, data) VALUES($1,$2)`, id, data); err != nil {
@@ -173,12 +190,12 @@ func (s *Server) appSendFile(w http.ResponseWriter, r *http.Request) error {
 	// sama seperti appSendMessage: ke semua Mac teman dan ke Mac lain milik pengirim
 	status := "sent"
 	if s.live.publish(friend, map[string]any{"type": "message", "friend_id": p.UserID, "friend_name": p.Name,
-		"message": withAttachment(messageJSON(id, text, "", at, false), a)}) > 0 {
+		"message": withE2E(withAttachment(messageJSON(id, text, "", at, false), a), e2e)}) > 0 {
 		if _, err := s.DB.ExecContext(r.Context(), `UPDATE messages SET delivered_at=now() WHERE id=$1`, id); err == nil {
 			status = "delivered"
 		}
 	}
-	mine := withAttachment(myMessageJSON(id, text, "", at, status), a)
+	mine := withE2E(withAttachment(myMessageJSON(id, text, "", at, status), a), e2e)
 	s.live.publish(p.UserID, map[string]any{"type": "message", "friend_id": friend, "message": mine})
 	httpx.JSON(w, 201, map[string]any{"message": mine})
 	return nil

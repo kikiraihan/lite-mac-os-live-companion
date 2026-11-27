@@ -52,6 +52,9 @@ hidup di desktop-nya.
   (mis. tangkapan layar) atau file yang disalin di Finder tampil di pratinjau dulu — gambar bisa dipotong / diputar,
   tombol **1** (transparan → putih) menyalakan sekali lihat — lalu dikirim; teks ditempel seperti biasa. Gambar yang
   dipilih lewat 📎 juga lewat pratinjau yang sama.
+- **Enkripsi ujung ke ujung**: pesan & lampiran baru ke teman yang semua Mac-nya sudah memakai Temu versi terbaru
+  dienkripsi di Mac pengirim dan hanya bisa dibuka Mac kalian berdua — server Temu pun tidak bisa membacanya
+  (penanda 🔒 di obrolan). Pesan lama tetap seperti dulu.
 
 **Admin** (`/admin`, akun & sesi terpisah dari pengguna)
 

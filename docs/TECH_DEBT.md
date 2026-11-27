@@ -7,8 +7,37 @@ belum diputuskan. Butir yang selesai dipindah ke catatan rilis, bukan dihapus di
 
 ## 1. Enkripsi ujung ke ujung (E2EE) untuk obrolan
 
-**Status:** rencana, belum dikerjakan. **Pesan lama dibiarkan apa adanya** (tetap teks biasa di database,
-tetap terbaca seperti sekarang) — E2EE hanya berlaku untuk pesan yang dikirim setelah fitur ini aktif.
+**Status:** **tahap 1 sudah jalan** (versi 1.17.0 — `server/internal/app/e2e.go`, `Sources/Temu/E2E.swift`).
+Sisanya di bagian "Yang masih tertunda" di bawah. **Pesan lama dibiarkan apa adanya** (tetap teks biasa di
+database, tetap terbaca seperti sekarang) — E2EE hanya berlaku untuk pesan yang dikirim setelah fitur ini aktif.
+
+### Yang sudah dikerjakan (tahap 1)
+
+- Kunci per Mac (X25519 + Ed25519, CryptoKit) di Keychain; kunci publik lewat `PUT /api/app/keys`, sekali per Mac
+  (server menolak penggantian — Mac yang kehilangan kuncinya harus diputuskan lalu dihubungkan lagi).
+- `GET /api/app/keys/{teman}`: kunci Mac teman + Mac milikku, beserta jumlah Mac yang tertaut.
+- Pesan teks dan lampiran (gambar / file, termasuk sekali lihat) ke teman yang **semua** Mac-nya punya kunci
+  dienkripsi di Mac pengirim; amplop untuk setiap Mac teman & Mac milikku; ditandatangani Mac pengirim.
+  Server memeriksa tanda tangan dan kelengkapan amplop (409 `e2e_stale` → aplikasi mengambil kunci terbaru & kirim
+  ulang sekali). Kolom `text` hanya label (`🔒 Pesan terenkripsi`, `📷 Foto`), nama file asli tidak disimpan.
+- TOFU: kunci tanda tangan setiap Mac diingat; Mac yang sama dengan kunci lain → pesan ditolak.
+- Tidak turun ke teks biasa: begitu obrolan dengan seorang teman pernah terenkripsi di Mac ini, Mac ini menolak
+  mengirim teks biasa ke teman itu (mis. kunci tidak bisa diambil, atau teman menautkan Mac versi lama).
+- Penanda "🔒 Pesan baru terenkripsi ujung ke ujung" di obrolan + tooltip per pesan.
+
+Catatan perbedaan dari rancangan awal: amplop semua Mac ikut dikirim ke setiap Mac tujuan (bukan hanya amplop
+miliknya). Aman — setiap amplop hanya bisa dibuka kunci privat Mac tujuannya — dan membuat saluran real-time
+tidak perlu mengirim kabar berbeda per Mac.
+
+### Yang masih tertunda
+
+- **Nomor keamanan** untuk dicocokkan berdua (melawan server yang menyisipkan Mac palsu).
+- **Pemberitahuan "Mac baru / kunci berubah"** di obrolan (sekarang: kunci berubah = pesan ditolak, Mac baru diterima
+  diam-diam).
+- **Double Ratchet** (forward secrecy per pesan) — tahap 2.
+- **Emot lewat pet** masih terbuka (nama emotnya terlihat server).
+- **Mac baru tidak bisa membaca riwayat E2EE** sebelum ia tertaut (tampil "Pesan terenkripsi untuk Mac lain").
+- **Uji Swift otomatis** untuk enkripsi ↔ dekripsi bolak-balik (sekarang hanya dicek lewat build + uji jalan di CI).
 
 ### Kenapa
 
@@ -73,6 +102,8 @@ untuk pesan E2EE diisi label netral (`🔒 Pesan`, `📷 Foto`) supaya aplikasi 
 tanpa membocorkan isi.
 
 ### Perubahan per bagian
+
+_Rancangan asli (untuk tahap berikutnya; sebagian sudah dikerjakan seperti di atas):_
 
 **Server (`server/`)**
 
