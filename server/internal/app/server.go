@@ -150,6 +150,7 @@ func (s *Server) Routes() http.Handler {
 	s.deviceRoutes(mux)
 	s.messageRoutes(mux)
 	s.attachmentRoutes(mux)
+	s.e2eRoutes(mux)
 	s.adminAuthRoutes(mux)
 	s.adminRoutes(mux)
 

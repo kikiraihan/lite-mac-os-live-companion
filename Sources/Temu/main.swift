@@ -341,9 +341,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
             }
         }
         // --demo-preview: pratinjau tempel gambar (SendPreview.swift); --demo-preview-crop: mode potong + sekali lihat menyala
-        if args.contains("--demo-preview") || args.contains("--demo-preview-crop") {
+        // --demo-preview-file: pratinjau file (bukan gambar)
+        if args.contains("--demo-preview") || args.contains("--demo-preview-crop") || args.contains("--demo-preview-file") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
-                self?.chat.previewDemo(cropping: args.contains("--demo-preview-crop"))
+                self?.chat.previewDemo(cropping: args.contains("--demo-preview-crop"), file: args.contains("--demo-preview-file"))
             }
         }
         // --demo-reaction <nama>: emot dari teman diputar berulang di atas pet untuk tangkapan layar CI (mis. party)

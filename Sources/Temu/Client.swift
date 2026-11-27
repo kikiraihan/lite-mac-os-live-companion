@@ -6,9 +6,13 @@
 // Lampiran obrolan (gambar / file, server/internal/app/attachments.go): file hanya dibaca kalau dipilih sendiri
 // lewat panel Buka atau ditempel (⌘V) di kolom tulis, dan hanya ditulis ke tempat yang dipilih lewat panel Simpan
 // (Attachments.swift).
+// Enkripsi ujung ke ujung (E2E.swift, server/internal/app/e2e.go): pesan & lampiran baru ke teman yang semua Mac-nya
+// sudah mendukung dienkripsi di Mac ini; server hanya meneruskan ciphertext. Kunci privat Mac ini hanya di Keychain.
 
 import Cocoa
+import CryptoKit
 import Security
+import UniformTypeIdentifiers
 
 // MARK: - Keychain
 
@@ -94,7 +98,8 @@ struct UnreadEntry: Codable {
 /// Satu pesan chat; `mine` = dikirim oleh akun ini (dari Mac mana pun)
 struct ChatMessage: Codable {
     let id: Int
-    let text: String
+    /// Pesan terenkripsi: dari server hanya label ("🔒 Pesan terenkripsi"), diganti isi aslinya setelah dibuka (E2E.swift)
+    var text: String
     let created_at: String
     let mine: Bool
     /// Hanya pesanku: "sent" ✓, "delivered" ✓✓, "read" ✓✓ biru (nil di server lama / pesan masuk)
@@ -103,6 +108,10 @@ struct ChatMessage: Codable {
     var reaction: String? = nil
     /// Lampiran (gambar / file); nil = pesan biasa. `text` berisi labelnya ("📷 Foto", "📎 laporan.pdf").
     var attachment: ChatAttachment? = nil
+    /// Amplop enkripsi ujung ke ujung (server/internal/app/e2e.go); nil = pesan teks biasa (termasuk semua pesan lama)
+    var e2e: E2E.Envelope? = nil
+    /// true = terenkripsi ujung ke ujung dan berhasil dibuka di Mac ini; false = terenkripsi tapi tidak bisa dibuka di sini
+    var secure: Bool? = nil
 
     /// Urutan status supaya hanya bisa naik (sent → delivered → read)
     static func rank(_ s: String?) -> Int {
@@ -127,8 +136,9 @@ struct ChatMessage: Codable {
 struct ChatAttachment: Codable {
     /// "image" (tampil di obrolan) atau "file"
     let kind: String
-    let name: String
-    let mime: String
+    /// Lampiran terenkripsi: nama & jenis aslinya dari dalam isi pesan (E2E.Payload), bukan dari server
+    var name: String
+    var mime: String
     let size: Int
     let once: Bool
     let expires_at: String
@@ -136,6 +146,8 @@ struct ChatAttachment: Codable {
     var opened: Bool? = nil
     /// Isinya masih ada di server
     var available: Bool
+    /// Lampiran terenkripsi: kunci isi filenya (base64), dari dalam isi pesan; nil = file biasa
+    var key: String? = nil
 
     var isImage: Bool { kind == "image" }
     var expires: Date {
@@ -276,6 +288,14 @@ final class Account {
     private var syncTimer: Timer?
     private var lastSync = Date.distantPast
     private var syncing = false
+
+    // E2EE (bagian "enkripsi ujung ke ujung" di bawah)
+    fileprivate var identityCache: E2E.Identity?
+    /// Kunci Mac ini sudah dikirim ke server sejak aplikasi dibuka
+    fileprivate var keysSent = false
+    fileprivate var registeringKeys = false
+    /// Kunci publik Mac teman & Mac milikku per teman, dengan waktu ambilnya
+    fileprivate var directories: [String: (dir: E2E.Directory, at: Date)] = [:]
 
     var server: String {
         get {
@@ -458,6 +478,7 @@ final class Account {
         defaults.removeObject(forKey: "friends")
         onUnread?(nil)
         Keychain.delete(Account.tokenAccount)
+        forgetKeys() // Mac yang ditautkan ulang = Mac baru = kunci keamanan baru
         defaults.removeObject(forKey: "accountHandle")
         defaults.removeObject(forKey: "hidePresence")
         defaults.removeObject(forKey: "roster")
@@ -505,6 +526,7 @@ final class Account {
             if !wasKnown { self.onPresence?() } // status teman kembali bisa dipercaya
             if let u = r.unread { self.applyUnread(u) }
             if !self.liveConnected { self.connectLive() }
+            self.registerKeys()
             self.buildRoster(r.pets) {
                 for n in r.nudges { self.onNudge?(n.from_name, n.text) }
             }
@@ -582,12 +604,27 @@ final class Account {
             guard code == 200, let data, let r = try? JSONDecoder().decode(MessagesResponse.self, from: data) else {
                 return done(nil, false, self?.errorText(data, code))
             }
-            done(r.messages, r.has_more, nil)
+            guard let self else { return done(r.messages, r.has_more, nil) }
+            self.reveal(friend, r.messages) { done($0, r.has_more, nil) }
         }
     }
 
+    /// Teks ke teman: terenkripsi ujung ke ujung kalau semua Mac teman sudah mendukung, selain itu teks biasa
     func sendMessage(_ friend: String, _ text: String, _ done: @escaping (ChatMessage?, String?) -> Void) {
-        postMessage(friend, ["text": text], done)
+        sendText(friend, text, retried: false, done)
+    }
+
+    private func sendText(_ friend: String, _ text: String, retried: Bool, _ done: @escaping (ChatMessage?, String?) -> Void) {
+        seal(friend, E2E.Payload(text: text), fresh: retried) { [weak self] env, err in
+            guard let self else { return }
+            if let err { return done(nil, err) }
+            guard let env else { return self.postMessage(friend, ["text": text], done) } // teman belum mendukung E2EE
+            // jangan pernah jatuh diam-diam ke teks biasa kalau E2EE seharusnya dipakai
+            guard let e2e = E2E.json(env) else { return done(nil, "Pesan gagal dienkripsi. Coba kirim lagi.") }
+            self.postMessage(friend, ["e2e": e2e], done, stale: retried ? nil : { [weak self] in
+                self?.sendText(friend, text, retried: true, done) // daftar Mac berubah → ambil kunci terbaru, kirim sekali lagi
+            })
+        }
     }
 
     /// Emot lewat pet, diputar di atas pet-ku di Mac teman. `keep` = ikut tersimpan di riwayat obrolan
@@ -603,13 +640,17 @@ final class Account {
         }
     }
 
-    private func postMessage(_ friend: String, _ body: [String: Any], _ done: @escaping (ChatMessage?, String?) -> Void) {
+    /// `stale`: dipanggil (sebagai ganti `done`) kalau server menolak amplop E2EE karena daftar Mac baru berubah (409)
+    private func postMessage(_ friend: String, _ body: [String: Any], _ done: @escaping (ChatMessage?, String?) -> Void,
+                             stale: (() -> Void)? = nil) {
         guard let id = safeID(friend) else { return done(nil, "Teman tidak dikenal.") }
         send(request("/api/app/messages/\(id)", method: "POST", body: body)) { [weak self] data, code in
+            if code == 409, let stale { return stale() }
             guard code == 201, let data, let r = try? JSONDecoder().decode(SentResponse.self, from: data) else {
                 return done(nil, self?.errorText(data, code))
             }
-            done(r.message, nil)
+            guard let self else { return done(r.message, nil) }
+            self.reveal(friend, [r.message]) { done($0.first, nil) }
         }
     }
 
@@ -639,18 +680,54 @@ final class Account {
     }
 
     /// Kirim isi file yang sudah ada di memori (mis. gambar dari clipboard). Dipanggil di main thread.
+    /// Ke teman yang semua Mac-nya mendukung E2EE: isi file dienkripsi di sini, nama & jenis aslinya ikut terenkripsi.
     func sendData(_ friend: String, _ data: Data, name: String, once: Bool, _ done: @escaping (ChatMessage?, Data?, String?) -> Void) {
-        guard let id = safeID(friend), var r = request("/api/app/messages/\(id)/files", method: "POST") else {
-            return done(nil, nil, "Teman tidak dikenal.")
-        }
+        sendData(friend, data, name: name, once: once, retried: false, done)
+    }
+
+    private func sendData(_ friend: String, _ data: Data, name: String, once: Bool, retried: Bool,
+                          _ done: @escaping (ChatMessage?, Data?, String?) -> Void) {
         guard !data.isEmpty else { return done(nil, nil, "File itu kosong (0 byte). Pilih file lain.") }
-        guard data.count <= Account.maxAttachment else {
+        guard data.count + E2E.fileOverhead <= Account.maxAttachment else {
             return done(nil, nil, "File terlalu besar. Maksimal \(Account.maxAttachment >> 20) MB per kiriman.")
+        }
+        let mime = UTType(filenameExtension: (name as NSString).pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+        // kunci file dibuat dulu, isinya baru dienkripsi kalau E2EE memang dipakai
+        let key = E2E.newKey()
+        let payload = E2E.Payload(name: name, mime: mime, key: key, size: data.count)
+        seal(friend, payload, fresh: retried) { [weak self] env, err in
+            guard let self else { return }
+            if let err { return done(nil, nil, err) }
+            var fields: [String: String] = [:]
+            var body = data
+            var sentName = name
+            if let env {
+                guard let raw = try? JSONEncoder().encode(env), let json = String(data: raw, encoding: .utf8),
+                      let sealed = try? E2E.sealFile(data, key: key) else { return done(nil, nil, "File gagal dienkripsi. Coba kirim lagi.") }
+                fields["e2e"] = json
+                fields["kind"] = NSImage(data: data) != nil ? "image" : "file"
+                body = sealed
+                sentName = "file" // nama aslinya hanya ada di dalam amplop
+            }
+            self.upload(friend, body, name: sentName, once: once, fields: fields, stale: env == nil || retried ? nil : { [weak self] in
+                self?.sendData(friend, data, name: name, once: once, retried: true, done)
+            }) { m, err in done(m, m == nil ? nil : data, err) } // gambarku sendiri langsung tampil dari isi aslinya
+        }
+    }
+
+    private func upload(_ friend: String, _ data: Data, name: String, once: Bool, fields: [String: String],
+                        stale: (() -> Void)?, _ done: @escaping (ChatMessage?, String?) -> Void) {
+        guard let id = safeID(friend), var r = request("/api/app/messages/\(id)/files", method: "POST") else {
+            return done(nil, "Teman tidak dikenal.")
         }
         let boundary = "temu-" + UUID().uuidString
         let name = name.replacingOccurrences(of: "\"", with: "'").components(separatedBy: .newlines).joined()
         var body = Data()
-        if once { body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"once\"\r\n\r\n1\r\n".data(using: .utf8)!) }
+        var fields = fields
+        if once { fields["once"] = "1" }
+        for (k, v) in fields.sorted(by: { $0.key < $1.key }) {
+            body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(k)\"\r\n\r\n\(v)\r\n".data(using: .utf8)!)
+        }
         body.append(("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(name)\"\r\n" +
                      "Content-Type: application/octet-stream\r\n\r\n").data(using: .utf8)!)
         body.append(data)
@@ -659,25 +736,34 @@ final class Account {
         fileSession.uploadTask(with: r, from: body) { [weak self] resData, resp, _ in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             DispatchQueue.main.async {
+                if code == 409, let stale { return stale() }
                 guard code == 201, let resData, let res = try? JSONDecoder().decode(SentResponse.self, from: resData) else {
-                    return done(nil, nil, self?.errorText(resData, code) ?? "File gagal terkirim.")
+                    return done(nil, self?.errorText(resData, code) ?? "File gagal terkirim.")
                 }
-                done(res.message, data, nil)
+                guard let self else { return done(res.message, nil) }
+                self.reveal(friend, [res.message]) { done($0.first, nil) }
             }
         }.resume()
     }
 
     /// Unduh isi lampiran. Pesan sekali lihat langsung terhapus dari server begitu berhasil diunduh.
     /// done: (isi, status HTTP; 410 = sudah dihapus dari server, pesan galat)
-    func downloadFile(_ friend: String, message: Int, _ done: @escaping (Data?, Int, String?) -> Void) {
+    /// `key` = kunci isi file lampiran terenkripsi (ChatAttachment.key); isinya dibuka di Mac ini setelah diunduh.
+    func downloadFile(_ friend: String, message: Int, key: String? = nil, _ done: @escaping (Data?, Int, String?) -> Void) {
         guard let id = safeID(friend), let r = request("/api/app/messages/\(id)/files/\(message)") else {
             return done(nil, 0, "Teman tidak dikenal.")
         }
         fileSession.dataTask(with: r) { [weak self] data, resp, _ in
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            // dibuka di antrean unduhan, bukan di main thread (file sampai 10 MB)
+            var plain: Data? = nil
+            if code == 200, let data {
+                if let key { plain = try? E2E.openFile(data, key: key) } else { plain = data }
+            }
             DispatchQueue.main.async {
-                guard code == 200, let data else { return done(nil, code, self?.errorText(data, code) ?? "Gagal mengunduh.") }
-                done(data, code, nil)
+                guard code == 200, data != nil else { return done(nil, code, self?.errorText(data, code) ?? "Gagal mengunduh.") }
+                guard let plain else { return done(nil, code, "File terenkripsi ini rusak, jadi tidak bisa dibuka. Minta temanmu mengirim ulang.") }
+                done(plain, code, nil)
             }
         }.resume()
     }
@@ -798,15 +884,19 @@ final class Account {
             if let o = ev.online_friends { online = Set(o) }
             onPresence?() // status teman kembali bisa dipercaya → titiknya muncul lagi
         case "message":
-            guard let friend = ev.friend_id, let m = ev.message else { return }
+            guard let friend = ev.friend_id, let raw = ev.message else { return }
             if let n = ev.friend_name, !n.isEmpty { friendNames[friend] = n }
-            onMessage?(friend, m)
-            // emot lewat pet: diputar di atas pet pengirim, juga saat obrolannya sedang dibuka
-            let played = !m.mine && (Reaction.find(m.reaction).map { onReaction?(friend, $0) ?? false } ?? false)
-            if !m.mine, isViewing?(friend) != true {
-                if played { reacted.insert(friend) } else { lastIncoming[friend] = m.text }
-                unread[friend, default: 0] += 1
-                onUnread?(friend)
+            // pesan terenkripsi dibuka dulu (biasanya langsung; kunci Mac pengirim baru diambil kalau belum dikenal)
+            reveal(friend, [raw]) { [weak self] list in
+                guard let self, let m = list.first else { return }
+                self.onMessage?(friend, m)
+                // emot lewat pet: diputar di atas pet pengirim, juga saat obrolannya sedang dibuka
+                let played = !m.mine && (Reaction.find(m.reaction).map { self.onReaction?(friend, $0) ?? false } ?? false)
+                if !m.mine, self.isViewing?(friend) != true {
+                    if played { self.reacted.insert(friend) } else { self.lastIncoming[friend] = m.text }
+                    self.unread[friend, default: 0] += 1
+                    self.onUnread?(friend)
+                }
             }
         case "reaction":
             // emot sesaat: hanya animasi, tidak masuk riwayat / belum dibaca
@@ -846,5 +936,180 @@ final class Account {
     func wipe() {
         Keychain.delete(Account.tokenAccount)
         try? FileManager.default.removeItem(at: cacheDir.deletingLastPathComponent())
+    }
+}
+
+// MARK: - Enkripsi ujung ke ujung (E2E.swift)
+
+extension Account {
+    /// id perangkat Mac ini di server (dari PUT /api/app/keys); nil = kuncinya belum terdaftar
+    var e2eDevice: String? { defaults.string(forKey: "e2eDevice") }
+
+    /// Kunci Mac ini (dibuat sekali, di Keychain). Hanya dipakai selama Mac ini tertaut.
+    fileprivate var identity: E2E.Identity {
+        if let id = identityCache { return id }
+        let id = E2E.Identity.loadOrCreate()
+        identityCache = id
+        return id
+    }
+
+    /// Kirim kunci publik Mac ini ke server (sekali per aplikasi dibuka; server mengabaikan kunci yang sama)
+    fileprivate func registerKeys() {
+        guard isLinked, !keysSent, !registeringKeys, let body = identity.publicBody() else { return }
+        registeringKeys = true
+        send(request("/api/app/keys", method: "PUT", body: body)) { [weak self] data, code in
+            guard let self else { return }
+            self.registeringKeys = false
+            guard code == 200, let data, let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let dev = r["device_id"] as? String else {
+                // 409 = server sudah menyimpan kunci lain untuk Mac ini (Keychain-nya hilang): pesan baru tetap
+                // teks biasa dari Mac ini sampai Mac ini diputuskan lalu dihubungkan lagi
+                if code == 409 { self.keysSent = true; defaults.removeObject(forKey: "e2eDevice") }
+                return
+            }
+            self.keysSent = true
+            defaults.set(dev.lowercased(), forKey: "e2eDevice")
+        }
+    }
+
+    /// Mac diputuskan: kunci lama tidak dipakai lagi (Mac yang ditautkan ulang mendapat id & kunci baru)
+    fileprivate func forgetKeys() {
+        E2E.Identity.forget()
+        identityCache = nil
+        keysSent = false
+        directories = [:]
+        defaults.removeObject(forKey: "e2eDevice")
+        defaults.removeObject(forKey: "e2ePins")
+        defaults.removeObject(forKey: "e2eFriends")
+    }
+
+    /// Kunci tanda tangan setiap Mac yang pernah terlihat (TOFU): id perangkat → kunci publik (base64).
+    /// Kunci publik tidak rahasia; yang dijaga hanya supaya server tidak bisa diam-diam menggantinya.
+    private var pins: [String: String] {
+        get { defaults.dictionary(forKey: "e2ePins") as? [String: String] ?? [:] }
+        set { defaults.set(newValue, forKey: "e2ePins") }
+    }
+
+    /// Teman yang obrolannya sudah terenkripsi ujung ke ujung (pernah mengirim / menerima pesan E2EE di Mac ini)
+    private var e2eFriends: Set<String> {
+        get { Set(defaults.stringArray(forKey: "e2eFriends") ?? []) }
+        set { defaults.set(Array(newValue), forKey: "e2eFriends") }
+    }
+
+    /// Kunci Mac teman & Mac milikku untuk teman ini. `maxAge` detik; lebih lama = ambil lagi dari server.
+    private func directory(_ friend: String, maxAge: TimeInterval, _ done: @escaping (E2E.Directory?) -> Void) {
+        if let c = directories[friend], Date().timeIntervalSince(c.at) < maxAge { return done(c.dir) }
+        guard let id = safeID(friend) else { return done(nil) }
+        send(request("/api/app/keys/\(id)")) { [weak self] data, code in
+            guard let self, code == 200, let data, let dir = try? JSONDecoder().decode(E2E.Directory.self, from: data) else {
+                return done(nil)
+            }
+            self.directories[friend] = (dir, Date())
+            done(dir)
+        }
+    }
+
+    /// Kunci yang sah (tanda tangan benar). Kunci baru diingat; Mac lama yang kuncinya berubah = curiga → nil.
+    private func peers(_ dir: E2E.Directory) -> [E2E.Peer]? {
+        var known = pins
+        var out: [E2E.Peer] = []
+        for k in dir.friend.keys + dir.mine.keys {
+            guard let p = try? E2E.Peer(k) else { return nil }
+            if let pinned = known[p.device], pinned != k.sign { return nil }
+            known[p.device] = k.sign
+            out.append(p)
+        }
+        if known != pins { pins = known }
+        return out
+    }
+
+    /// Siapkan amplop untuk teman. done(amplop, nil) = pakai E2EE; done(nil, nil) = teman belum mendukung → teks biasa;
+    /// done(nil, galat) = jangan kirim. `fresh` = ambil kunci terbaru dari server (setelah ditolak karena daftar Mac berubah).
+    fileprivate func seal(_ friend: String, _ payload: E2E.Payload, fresh: Bool,
+                          _ done: @escaping (E2E.Envelope?, String?) -> Void) {
+        // obrolan yang sudah pernah terenkripsi tidak pernah turun lagi ke teks biasa (server / jaringan tidak bisa memaksanya)
+        let strict = e2eFriends.contains(friend)
+        let name = friendName(friend)
+        guard let me = e2eDevice else {
+            // Mac ini belum siap (server lama / kunci belum terdaftar)
+            return done(nil, strict ? "Kunci keamanan Mac ini belum terdaftar. Tunggu sebentar, lalu kirim lagi." : nil)
+        }
+        directory(friend, maxAge: fresh ? 0 : 60) { [weak self] dir in
+            guard let self else { return }
+            // server lama (tanpa /api/app/keys) atau teman yang salah satu Mac-nya belum diperbarui → teks biasa,
+            // kecuali obrolan ini sudah pernah terenkripsi
+            guard let dir, dir.me.lowercased() == me else {
+                return done(nil, strict ? "Kunci keamanan \(name) tidak bisa diambil. Periksa koneksi internet, lalu kirim lagi." : nil)
+            }
+            guard dir.friend.complete else {
+                return done(nil, strict ? "Salah satu Mac \(name) belum mendukung pesan terenkripsi, jadi pesannya tidak dikirim. " +
+                    "Minta \(name) memperbarui Temu di semua Mac-nya." : nil)
+            }
+            guard let peers = self.peers(dir) else {
+                return done(nil, "Kunci keamanan salah satu Mac \(name) berubah tanpa ditautkan ulang, " +
+                    "jadi pesannya tidak dikirim demi keamanan. Minta \(name) memutuskan lalu menghubungkan lagi Mac-nya.")
+            }
+            guard peers.contains(where: { $0.device == me }) else {
+                return done(nil, strict ? "Kunci keamanan Mac ini belum terdaftar. Tunggu sebentar, lalu kirim lagi." : nil)
+            }
+            do {
+                let env = try E2E.seal(payload, device: me, identity: self.identity, to: peers)
+                self.e2eFriends.insert(friend)
+                done(env, nil)
+            } catch {
+                done(nil, "Pesan gagal dienkripsi. Coba kirim lagi.")
+            }
+        }
+    }
+
+    /// Buka pesan terenkripsi di daftar ini (yang lain dibiarkan). Langsung kalau kunci pengirimnya sudah dikenal.
+    fileprivate func reveal(_ friend: String, _ list: [ChatMessage], refreshed: Bool = false, _ done: @escaping ([ChatMessage]) -> Void) {
+        guard list.contains(where: { $0.e2e != nil && $0.secure == nil }) else { return done(list) }
+        let pins = self.pins
+        let me = e2eDevice
+        let unknown = list.contains { m in
+            guard let env = m.e2e, m.secure == nil else { return false }
+            let from = env.from_device.lowercased()
+            return from != me && pins[from] == nil
+        }
+        if unknown && !refreshed {
+            // kunci Mac pengirim belum pernah terlihat → ambil daftar kunci (sekali), lalu coba lagi
+            return directory(friend, maxAge: 0) { [weak self] dir in
+                guard let self else { return done(list) }
+                if let dir { _ = self.peers(dir) }
+                self.reveal(friend, list, refreshed: true, done)
+            }
+        }
+        let opened = list.map { openMessage($0, me: me, pins: pins) }
+        if opened.contains(where: { $0.secure == true }), !e2eFriends.contains(friend) { e2eFriends.insert(friend) }
+        done(opened)
+    }
+
+    private func openMessage(_ m: ChatMessage, me: String?, pins: [String: String]) -> ChatMessage {
+        guard let env = m.e2e, m.secure == nil else { return m }
+        var m = m
+        let from = env.from_device.lowercased()
+        let signer: Curve25519.Signing.PublicKey? = from == me ? identity.sign.publicKey
+            : pins[from].flatMap { Data(base64Encoded: $0) }.flatMap { try? Curve25519.Signing.PublicKey(rawRepresentation: $0) }
+        guard let me, let signer, let p = try? E2E.open(env, device: me, identity: identity, signer: signer) else {
+            m.secure = false
+            let forMe = me.map { env.keys[$0] != nil } ?? false
+            // bukan untuk Mac ini = dikirim sebelum Mac ini tertaut / mendukung E2EE
+            m.text = forMe ? "🔒 Pesan terenkripsi ini tidak bisa dibuka: isinya rusak atau tanda tangannya tidak cocok"
+                : "🔒 Pesan terenkripsi untuk Mac lain — tidak bisa dibuka di Mac ini"
+            if m.attachment != nil { m.attachment?.available = false }
+            return m
+        }
+        m.secure = true
+        if var a = m.attachment {
+            a.name = p.name ?? a.name
+            a.mime = p.mime ?? a.mime
+            a.key = p.key
+            m.attachment = a
+            m.text = a.isImage ? (a.once ? "📷 Foto sekali lihat" : "📷 Foto") : (a.once ? "📎 File sekali unduh" : "📎 " + a.name)
+        } else {
+            m.text = p.text ?? m.text
+        }
+        return m
     }
 }

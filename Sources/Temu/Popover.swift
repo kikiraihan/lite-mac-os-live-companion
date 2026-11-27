@@ -370,23 +370,40 @@ final class PopoverModel: ObservableObject {
 
     // MARK: lampiran
 
-    /// 📎 → panel Buka macOS. Hanya file yang dipilih sendiri di panel ini yang dibaca.
-    func pickFile(once: Bool) {
+    /// 📎 → panel Buka macOS → pratinjau (SendPreview.swift), sama seperti tempel: gambar bisa dipotong / diputar,
+    /// semua jenis file punya tombol "1" sekali lihat. Hanya file yang dipilih sendiri di panel ini yang dibaca.
+    func pickFile() {
         guard let id = selected else { return }
         let name = current?.name ?? "temanmu"
-        DispatchQueue.main.async { [weak self] in // tunggu menu 📎 tertutup dulu
+        DispatchQueue.main.async { [weak self] in // panel dibuka setelah klik tombol 📎 selesai diproses
             guard let self else { return }
             let panel = NSOpenPanel()
             panel.canChooseFiles = true
             panel.canChooseDirectories = false
-            panel.allowsMultipleSelection = false
-            panel.prompt = "Kirim"
-            panel.message = once
-                ? "Sekali lihat untuk \(name): hanya bisa dibuka sekali, lalu langsung terhapus dari server. Maksimal 10 MB."
-                : "Gambar atau file untuk \(name). Tersimpan di server sehari, lalu terhapus otomatis. Maksimal 10 MB."
-            guard let url = self.runPanel(panel) else { return }
-            self.sendFile(url, to: id, once: once)
+            panel.allowsMultipleSelection = true
+            panel.prompt = "Pilih"
+            panel.message = "Gambar atau file untuk \(name), paling banyak 10 sekaligus. Maksimal 10 MB per file."
+            guard let urls = self.runPanels(panel), !urls.isEmpty else { return }
+            let max = 10
+            guard urls.count <= max else {
+                self.error = "Paling banyak \(max) file sekali kirim. Pilih lebih sedikit, lalu coba lagi."
+                return
+            }
+            self.app?.holdPopovers(true)
+            let r = SendPreview.run(urls.map { .file($0) }, to: name)
+            self.app?.holdPopovers(false)
+            if let r { self.send(r.items, to: id, once: r.once) }
+            self.focusToken += 1
         }
+    }
+
+    /// Panel Buka dengan beberapa pilihan, tanpa menutup popover
+    private func runPanels(_ panel: NSOpenPanel) -> [URL]? {
+        app?.holdPopovers(true)
+        NSApp.activate(ignoringOtherApps: true)
+        let ok = panel.runModal() == .OK
+        app?.holdPopovers(false)
+        return ok ? panel.urls : nil
     }
 
     /// Jalankan panel Buka / Simpan tanpa menutup popover
@@ -478,11 +495,14 @@ final class PopoverModel: ObservableObject {
     }
 
     /// --demo-preview / --demo-preview-crop: pratinjau tempel gambar dengan gambar contoh (tangkapan layar CI)
-    func previewDemo(cropping: Bool) {
+    /// --demo-preview-file: pratinjau file biasa (tanpa potong, hanya tombol "1")
+    func previewDemo(cropping: Bool, file: Bool = false) {
         guard demo, let id = selected, let tiff = NSApp.applicationIconImage?.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) else { return }
+        let item: Upload = file ? .data(Data(repeating: 0x25, count: 248_000), name: "jadwal-liburan.pdf")
+                                : .data(png, name: "Gambar contoh.png")
         app?.holdPopovers(true)
-        let r = SendPreview.run([.data(png, name: "Gambar contoh.png")], to: current?.name ?? "temanmu", demo: cropping)
+        let r = SendPreview.run([item], to: current?.name ?? "temanmu", demo: cropping)
         app?.holdPopovers(false)
         if let r { send(r.items, to: id, once: r.once) }
     }
@@ -499,7 +519,7 @@ final class PopoverModel: ObservableObject {
         guard !demo, let friend = selected, let a = m.attachment, a.isImage, !a.once, a.live,
               images[m.id] == nil, !fetching.contains(m.id), let acc = app?.account else { return }
         fetching.insert(m.id)
-        acc.downloadFile(friend, message: m.id) { [weak self] data, code, _ in
+        acc.downloadFile(friend, message: m.id, key: a.key) { [weak self] data, code, _ in
             guard let self else { return }
             self.fetching.remove(m.id)
             if code == 410 || code == 404 { return self.markGone(friend, m.id, opened: false) }
@@ -523,7 +543,7 @@ final class PopoverModel: ObservableObject {
         guard let acc = app?.account else { return }
         if a.isImage {
             fetching.insert(m.id)
-            acc.downloadFile(friend, message: m.id) { [weak self] data, code, err in
+            acc.downloadFile(friend, message: m.id, key: a.key) { [weak self] data, code, err in
                 guard let self else { return }
                 self.fetching.remove(m.id)
                 if code == 200 || code == 410 || code == 404 { self.markGone(friend, m.id, opened: code == 200) }
@@ -538,7 +558,7 @@ final class PopoverModel: ObservableObject {
         // file sekali unduh: pilih tempatnya dulu, karena setelah diunduh isinya sudah tidak ada di server
         guard let dest = askSaveLocation(a.name, once: true) else { return }
         fetching.insert(m.id)
-        acc.downloadFile(friend, message: m.id) { [weak self] data, code, err in
+        acc.downloadFile(friend, message: m.id, key: a.key) { [weak self] data, code, err in
             guard let self else { return }
             self.fetching.remove(m.id)
             if code == 200 || code == 410 || code == 404 { self.markGone(friend, m.id, opened: code == 200) }
@@ -554,7 +574,7 @@ final class PopoverModel: ObservableObject {
         if let data = imageData[m.id] { return write(data, to: dest) }
         guard !demo, let acc = app?.account else { return }
         fetching.insert(m.id)
-        acc.downloadFile(friend, message: m.id) { [weak self] data, code, err in
+        acc.downloadFile(friend, message: m.id, key: a.key) { [weak self] data, code, err in
             guard let self else { return }
             self.fetching.remove(m.id)
             if code == 410 || code == 404 { self.markGone(friend, m.id, opened: false) }
@@ -644,17 +664,18 @@ final class PopoverModel: ObservableObject {
             ChatMessage(id: 4, text: "Jadi dong. Jam 8 ya", created_at: iso(40), mine: true, status: "read"),
             ChatMessage(id: 5, text: "Oke, sampai nanti 💛", created_at: iso(3), mine: false),
             // contoh status centang untuk tangkapan layar: ✓✓ diterima lalu ✓ terkirim
-            ChatMessage(id: 6, text: "Aku bawa camilan ya", created_at: iso(2), mine: true, status: "delivered"),
-            ChatMessage(id: 7, text: "Sampai jam 8!", created_at: iso(1), mine: true, status: "sent"),
+            // mulai dari sini contoh pesan terenkripsi ujung ke ujung (penanda 🔒 di atasnya)
+            ChatMessage(id: 6, text: "Aku bawa camilan ya", created_at: iso(2), mine: true, status: "delivered", secure: true),
+            ChatMessage(id: 7, text: "Sampai jam 8!", created_at: iso(1), mine: true, status: "sent", secure: true),
             // contoh emot lewat pet
             ChatMessage(id: 8, text: "❤️", created_at: iso(0.5), mine: false, reaction: "love"),
             // contoh lampiran: file biasa (ada sehari) dan foto sekali lihat
             ChatMessage(id: 9, text: "📎 jadwal-liburan.pdf", created_at: iso(0.4), mine: true, status: "read",
                         attachment: ChatAttachment(kind: "file", name: "jadwal-liburan.pdf", mime: "application/pdf", size: 248_000,
-                                                   once: false, expires_at: iso(-1439), available: true)),
+                                                   once: false, expires_at: iso(-1439), available: true), secure: true),
             ChatMessage(id: 10, text: "📷 Foto sekali lihat", created_at: iso(0.2), mine: false,
                         attachment: ChatAttachment(kind: "image", name: "foto.jpg", mime: "image/jpeg", size: 812_000,
-                                                   once: true, expires_at: iso(-1439), available: true)),
+                                                   once: true, expires_at: iso(-1439), available: true), secure: true),
         ]
         threads["r"] = []
         hasMore = ["d": false, "r": false]
@@ -1226,6 +1247,8 @@ struct PopoverView: View {
                             .padding(.bottom, 6)
                     }
                     let msgs = model.messages
+                    // seperti WhatsApp: penanda sebelum pesan terenkripsi pertama (pesan lama tetap teks biasa)
+                    let firstSecure = msgs.firstIndex { $0.secure == true }
                     ForEach(Array(msgs.enumerated()), id: \.element.id) { i, m in
                         if i == 0 || !Calendar.current.isDate(msgs[i - 1].date, inSameDayAs: m.date) {
                             Text(dayLabel(m.date))
@@ -1233,6 +1256,7 @@ struct PopoverView: View {
                                 .foregroundStyle(.tertiary)
                                 .padding(.vertical, 6)
                         }
+                        if i == firstSecure { e2eNotice }
                         let tail = i == msgs.count - 1 || msgs[i + 1].mine != m.mine
                         Group {
                             if let a = m.attachment {
@@ -1271,6 +1295,28 @@ struct PopoverView: View {
         return PopoverView.dayFormat.string(from: d)
     }
 
+    /// Penanda di obrolan: mulai dari sini pesan terenkripsi ujung ke ujung
+    private var e2eNotice: some View {
+        Label("Pesan baru terenkripsi ujung ke ujung", systemImage: "lock.fill")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(Brand.lemon.opacity(0.18)))
+            .padding(.vertical, 4)
+            .help("Pesan & lampiran mulai dari sini hanya bisa dibaca Mac kalian berdua — server Temu pun tidak bisa. " +
+                  "Pesan sebelumnya tetap seperti dulu.")
+    }
+
+    /// Baris tooltip untuk pesan terenkripsi ujung ke ujung (E2E.swift)
+    static func lockHelp(_ m: ChatMessage) -> String {
+        switch m.secure {
+        case true?: return "\n🔒 Terenkripsi ujung ke ujung: hanya Mac kalian berdua yang bisa membacanya, server pun tidak."
+        case false?: return "\n🔒 Terenkripsi ujung ke ujung, tapi tidak bisa dibuka di Mac ini."
+        default: return ""
+        }
+    }
+
     private func bubble(_ m: ChatMessage, tail: Bool) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: 5) {
             Text(m.text)
@@ -1288,7 +1334,7 @@ struct PopoverView: View {
             .frame(maxWidth: 250, alignment: m.mine ? .trailing : .leading)
             .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
             .padding(.bottom, tail ? 6 : 0)
-            .help(PopoverView.timeFormat.string(from: m.date) + (m.mine ? ReceiptTicks.label(m.status) : ""))
+            .help(PopoverView.timeFormat.string(from: m.date) + (m.mine ? ReceiptTicks.label(m.status) : "") + PopoverView.lockHelp(m))
             .contextMenu {
                 Button("Salin pesan") {
                     NSPasteboard.general.clearContents()
@@ -1305,7 +1351,8 @@ struct PopoverView: View {
             .frame(maxWidth: .infinity, alignment: m.mine ? .trailing : .leading)
             .padding(.bottom, tail ? 6 : 0)
             .onAppear { model.loadImage(m) }
-            .help(PopoverView.timeFormat.string(from: m.date) + (m.mine ? ReceiptTicks.label(m.status) : "") + "\n" + attachmentHelp(m, a))
+            .help(PopoverView.timeFormat.string(from: m.date) + (m.mine ? ReceiptTicks.label(m.status) : "") + "\n" + attachmentHelp(m, a)
+                  + PopoverView.lockHelp(m))
     }
 
     private func attachmentHelp(_ m: ChatMessage, _ a: ChatAttachment) -> String {
@@ -1375,17 +1422,12 @@ struct PopoverView: View {
                     .frame(width: 22, height: 30)
                     .help("Mengirim lampiran…")
             } else {
-                Menu {
-                    Button("Gambar atau file…") { model.pickFile(once: false) }
-                    Button("Sekali lihat…") { model.pickFile(once: true) }
-                } label: {
+                Button { model.pickFile() } label: {
                     Image(systemName: "paperclip")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .buttonStyle(.borderless)
                 .frame(width: 22, height: 30)
-                .help("Kirim gambar atau file ke \(name). Tersimpan sehari di server; sekali lihat terhapus setelah dibuka.")
+                .help("Kirim gambar atau file ke \(name). Pratinjau dulu: gambar bisa dipotong, tombol \"1\" = sekali lihat.")
             }
             Button {
                 showReactions.toggle()

@@ -14,7 +14,7 @@ hadir dan hangat, bukan mengawasi.
 | Server | `server/` | Go + PostgreSQL: API pengguna, API admin, API aplikasi Mac, worker generate |
 | Web | `web/` | Vue 3 + Vite: sisi pengguna dan ruang admin (satu SPA, dua sesi terpisah) |
 
-Rancangan visual web: `docs/DESIGN.md`. Pekerjaan yang tertunda: `docs/TECH_DEBT.md`. Deploy: `DEPLOY.md` (manusia) dan `AGENT_SETUP_VM.md` (runbook agent di VM).
+Rancangan visual web: `docs/DESIGN.md`. Pekerjaan yang tertunda (termasuk tahap E2EE berikutnya): `docs/TECH_DEBT.md`. Deploy: `DEPLOY.md` (manusia) dan `AGENT_SETUP_VM.md` (runbook agent di VM).
 
 ## Cek sebelum commit
 
@@ -59,7 +59,12 @@ jalankan `make sprites`. CI menolak kalau keduanya tidak sinkron.
   menjalankan perintah shell selain yang sudah ada (ganti .app saat update). Posisi kursor
   (`NSEvent.mouseLocation`) boleh. Fitur "lucu" yang butuh izin sistem = tolak, tawarkan alternatif.
 - **Aplikasi Mac tidak pernah memegang password.** Hanya token perangkat dari alur kode
-  (`/api/app/link/*`), disimpan di Keychain. Token itu hanya untuk `/api/app/*`.
+  (`/api/app/link/*`), disimpan di Keychain. Token itu hanya untuk `/api/app/*`. Selain token, Mac hanya memegang
+  kunci privat E2EE-nya sendiri (`E2E.swift`, juga di Keychain, dihapus saat Mac diputuskan).
+- **Enkripsi ujung ke ujung** (`server/internal/app/e2e.go` ↔ `Sources/Temu/E2E.swift`, format amplop harus sama
+  persis di keduanya): server tidak pernah menerima kunci privat atau isi asli pesan / nama file terenkripsi, dan
+  tidak punya endpoint (termasuk admin) untuk membukanya. Obrolan yang sudah terenkripsi tidak boleh turun diam-diam
+  ke teks biasa (`e2eFriends` di Client.swift). Pesan lama tetap teks biasa — jangan dimigrasi.
 - **Admin dan pengguna terpisah total**: tabel (`admins` vs `users`), sesi, cookie, CSRF, endpoint login.
   Jangan membuat jalan pintas (mis. kolom `is_admin` di `users`, atau sesi pengguna yang diterima `/api/admin`).
 - **Setiap query data pengguna memakai id pemanggil** (`who(r).UserID`). Pet orang lain hanya terlihat oleh
