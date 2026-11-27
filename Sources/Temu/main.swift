@@ -340,6 +340,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopo
                 self.stage.say(p, "Nanti malam jadi video call? 💛", seconds: 30, force: true, from: "Kiya")
             }
         }
+        // --demo-preview: pratinjau tempel gambar (SendPreview.swift); --demo-preview-crop: mode potong + sekali lihat menyala
+        if args.contains("--demo-preview") || args.contains("--demo-preview-crop") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                self?.chat.previewDemo(cropping: args.contains("--demo-preview-crop"))
+            }
+        }
         // --demo-reaction <nama>: emot dari teman diputar berulang di atas pet untuk tangkapan layar CI (mis. party)
         // --demo-reaction-at <detik>: diputar sekali dan dibekukan di detik itu, supaya tangkapan layarnya pasti
         if let i = args.firstIndex(of: "--demo-reaction"), i + 1 < args.count, let r = Reaction.find(args[i + 1]) {
