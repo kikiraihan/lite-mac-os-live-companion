@@ -370,7 +370,7 @@ final class PopoverModel: ObservableObject {
 
     // MARK: lampiran
 
-    /// 📎 → panel Buka macOS. Hanya file yang dipilih sendiri di panel ini yang dibaca.
+    /// 📎 → panel Buka macOS. Hanya file yang dipilih sendiri di panel ini yang dibaca. Gambar lewat pratinjau dulu (SendPreview.swift).
     func pickFile(once: Bool) {
         guard let id = selected else { return }
         let name = current?.name ?? "temanmu"
@@ -385,7 +385,13 @@ final class PopoverModel: ObservableObject {
                 ? "Sekali lihat untuk \(name): hanya bisa dibuka sekali, lalu langsung terhapus dari server. Maksimal 10 MB."
                 : "Gambar atau file untuk \(name). Tersimpan di server sehari, lalu terhapus otomatis. Maksimal 10 MB."
             guard let url = self.runPanel(panel) else { return }
-            self.sendFile(url, to: id, once: once)
+            // gambar → pratinjau dulu (potong / putar, tombol "1" sudah menyala kalau dari "Sekali lihat…")
+            guard SendPreview.isImage(url) else { return self.sendFile(url, to: id, once: once) }
+            self.app?.holdPopovers(true)
+            let r = SendPreview.run([.file(url)], to: name, once: once)
+            self.app?.holdPopovers(false)
+            if let r { self.send(r.items, to: id, once: r.once) }
+            self.focusToken += 1
         }
     }
 

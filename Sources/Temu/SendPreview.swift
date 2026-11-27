@@ -1,4 +1,5 @@
-// Temu — pratinjau sebelum mengirim lampiran yang ditempel (⌘V / ⌃V di kolom tulis obrolan, Popover.swift).
+// Temu — pratinjau sebelum mengirim lampiran yang ditempel (⌘V / ⌃V di kolom tulis obrolan, Popover.swift),
+// juga gambar yang dipilih lewat tombol 📎.
 //   satu gambar  : tampil besar; bisa dipotong (seret untuk membuat kotak, seret pojoknya untuk mengubah ukuran,
 //                  seret isinya untuk menggeser) dan diputar 90°. Tanpa diubah → file aslinya yang terkirim.
 //   file lain    : daftar nama file yang akan dikirim.
@@ -16,12 +17,12 @@ enum SendPreview {
         let once: Bool
     }
 
-    /// Jendela modal; nil = batal. `demo` hanya untuk tangkapan layar CI (--demo-preview-crop):
-    /// mulai dalam mode potong dengan sekali lihat menyala.
-    static func run(_ items: [PopoverModel.Upload], to name: String, demo: Bool = false) -> Result? {
+    /// Jendela modal; nil = batal. `once` = tombol "1" sudah menyala (📎 › Sekali lihat…).
+    /// `demo` hanya untuk tangkapan layar CI (--demo-preview-crop): mulai dalam mode potong dengan sekali lihat menyala.
+    static func run(_ items: [PopoverModel.Upload], to name: String, once: Bool = false, demo: Bool = false) -> Result? {
         let image = items.count == 1 ? loadImage(items[0]) : nil
         let state = PreviewState(items: items, image: image, cropping: demo && image != nil)
-        state.once = demo
+        state.once = once || demo
         var size = NSSize(width: 460, height: 360)
         if let image {
             let w = CGFloat(image.width), h = CGFloat(image.height)
@@ -54,6 +55,11 @@ enum SendPreview {
         func windowWillClose(_ notification: Notification) {
             if NSApp.modalWindow === notification.object as? NSWindow { NSApp.stopModal() }
         }
+    }
+
+    /// File gambar yang bisa dipratinjau (📎 → gambar lewat pratinjau, file lain langsung terkirim)
+    static func isImage(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) ?? false
     }
 
     /// Satu gambar (dari clipboard atau file gambar yang disalin di Finder), sudah diputar sesuai EXIF

@@ -50,7 +50,8 @@ hidup di desktop-nya.
   otomatis. Pilihan **sekali lihat** (seperti WhatsApp): hanya penerima yang bisa membuka, sekali saja, dan isinya
   langsung dihapus dari server begitu dibuka. Bisa juga **⌘V (atau ⌃V)** di kolom tulis: gambar di clipboard
   (mis. tangkapan layar) atau file yang disalin di Finder tampil di pratinjau dulu — gambar bisa dipotong / diputar,
-  tombol **1** (transparan → putih) menyalakan sekali lihat — lalu dikirim; teks ditempel seperti biasa.
+  tombol **1** (transparan → putih) menyalakan sekali lihat — lalu dikirim; teks ditempel seperti biasa. Gambar yang
+  dipilih lewat 📎 juga lewat pratinjau yang sama.
 
 **Admin** (`/admin`, akun & sesi terpisah dari pengguna)
 
