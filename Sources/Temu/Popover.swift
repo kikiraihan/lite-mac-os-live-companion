@@ -370,29 +370,40 @@ final class PopoverModel: ObservableObject {
 
     // MARK: lampiran
 
-    /// 📎 → panel Buka macOS. Hanya file yang dipilih sendiri di panel ini yang dibaca. Gambar lewat pratinjau dulu (SendPreview.swift).
-    func pickFile(once: Bool) {
+    /// 📎 → panel Buka macOS → pratinjau (SendPreview.swift), sama seperti tempel: gambar bisa dipotong / diputar,
+    /// semua jenis file punya tombol "1" sekali lihat. Hanya file yang dipilih sendiri di panel ini yang dibaca.
+    func pickFile() {
         guard let id = selected else { return }
         let name = current?.name ?? "temanmu"
-        DispatchQueue.main.async { [weak self] in // tunggu menu 📎 tertutup dulu
+        DispatchQueue.main.async { [weak self] in // panel dibuka setelah klik tombol 📎 selesai diproses
             guard let self else { return }
             let panel = NSOpenPanel()
             panel.canChooseFiles = true
             panel.canChooseDirectories = false
-            panel.allowsMultipleSelection = false
-            panel.prompt = "Kirim"
-            panel.message = once
-                ? "Sekali lihat untuk \(name): hanya bisa dibuka sekali, lalu langsung terhapus dari server. Maksimal 10 MB."
-                : "Gambar atau file untuk \(name). Tersimpan di server sehari, lalu terhapus otomatis. Maksimal 10 MB."
-            guard let url = self.runPanel(panel) else { return }
-            // gambar → pratinjau dulu (potong / putar, tombol "1" sudah menyala kalau dari "Sekali lihat…")
-            guard SendPreview.isImage(url) else { return self.sendFile(url, to: id, once: once) }
+            panel.allowsMultipleSelection = true
+            panel.prompt = "Pilih"
+            panel.message = "Gambar atau file untuk \(name), paling banyak 10 sekaligus. Maksimal 10 MB per file."
+            guard let urls = self.runPanels(panel), !urls.isEmpty else { return }
+            let max = 10
+            guard urls.count <= max else {
+                self.error = "Paling banyak \(max) file sekali kirim. Pilih lebih sedikit, lalu coba lagi."
+                return
+            }
             self.app?.holdPopovers(true)
-            let r = SendPreview.run([.file(url)], to: name, once: once)
+            let r = SendPreview.run(urls.map { .file($0) }, to: name)
             self.app?.holdPopovers(false)
             if let r { self.send(r.items, to: id, once: r.once) }
             self.focusToken += 1
         }
+    }
+
+    /// Panel Buka dengan beberapa pilihan, tanpa menutup popover
+    private func runPanels(_ panel: NSOpenPanel) -> [URL]? {
+        app?.holdPopovers(true)
+        NSApp.activate(ignoringOtherApps: true)
+        let ok = panel.runModal() == .OK
+        app?.holdPopovers(false)
+        return ok ? panel.urls : nil
     }
 
     /// Jalankan panel Buka / Simpan tanpa menutup popover
@@ -484,11 +495,14 @@ final class PopoverModel: ObservableObject {
     }
 
     /// --demo-preview / --demo-preview-crop: pratinjau tempel gambar dengan gambar contoh (tangkapan layar CI)
-    func previewDemo(cropping: Bool) {
+    /// --demo-preview-file: pratinjau file biasa (tanpa potong, hanya tombol "1")
+    func previewDemo(cropping: Bool, file: Bool = false) {
         guard demo, let id = selected, let tiff = NSApp.applicationIconImage?.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) else { return }
+        let item: Upload = file ? .data(Data(repeating: 0x25, count: 248_000), name: "jadwal-liburan.pdf")
+                                : .data(png, name: "Gambar contoh.png")
         app?.holdPopovers(true)
-        let r = SendPreview.run([.data(png, name: "Gambar contoh.png")], to: current?.name ?? "temanmu", demo: cropping)
+        let r = SendPreview.run([item], to: current?.name ?? "temanmu", demo: cropping)
         app?.holdPopovers(false)
         if let r { send(r.items, to: id, once: r.once) }
     }
@@ -1408,17 +1422,12 @@ struct PopoverView: View {
                     .frame(width: 22, height: 30)
                     .help("Mengirim lampiran…")
             } else {
-                Menu {
-                    Button("Gambar atau file…") { model.pickFile(once: false) }
-                    Button("Sekali lihat…") { model.pickFile(once: true) }
-                } label: {
+                Button { model.pickFile() } label: {
                     Image(systemName: "paperclip")
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
+                .buttonStyle(.borderless)
                 .frame(width: 22, height: 30)
-                .help("Kirim gambar atau file ke \(name). Tersimpan sehari di server; sekali lihat terhapus setelah dibuka.")
+                .help("Kirim gambar atau file ke \(name). Pratinjau dulu: gambar bisa dipotong, tombol \"1\" = sekali lihat.")
             }
             Button {
                 showReactions.toggle()

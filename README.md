@@ -50,8 +50,8 @@ hidup di desktop-nya.
   otomatis. Pilihan **sekali lihat** (seperti WhatsApp): hanya penerima yang bisa membuka, sekali saja, dan isinya
   langsung dihapus dari server begitu dibuka. Bisa juga **⌘V (atau ⌃V)** di kolom tulis: gambar di clipboard
   (mis. tangkapan layar) atau file yang disalin di Finder tampil di pratinjau dulu — gambar bisa dipotong / diputar,
-  tombol **1** (transparan → putih) menyalakan sekali lihat — lalu dikirim; teks ditempel seperti biasa. Gambar yang
-  dipilih lewat 📎 juga lewat pratinjau yang sama.
+  tombol **1** (transparan → putih) menyalakan sekali lihat — lalu dikirim; teks ditempel seperti biasa. Lampiran yang
+  dipilih lewat 📎 juga lewat pratinjau yang sama (file biasa: tanpa potong, hanya tombol **1**).
 - **Enkripsi ujung ke ujung**: pesan & lampiran baru ke teman yang semua Mac-nya sudah memakai Temu versi terbaru
   dienkripsi di Mac pengirim dan hanya bisa dibuka Mac kalian berdua — server Temu pun tidak bisa membacanya
   (penanda 🔒 di obrolan). Pesan lama tetap seperti dulu.
